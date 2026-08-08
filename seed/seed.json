@@ -219,7 +219,7 @@
 				{
 					"type": "custom",
 					"label": "About",
-					"url": "/about"
+					"url": "/pages/about"
 				},
 				{
 					"type": "custom",
