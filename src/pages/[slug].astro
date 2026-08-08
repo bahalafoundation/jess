@@ -1,0 +1,108 @@
+---
+import { getEmDashEntry, decodeSlug } from "emdash";
+import { PortableText } from "emdash/ui";
+import Base from "../layouts/Base.astro";
+
+const slug = decodeSlug(Astro.params.slug);
+
+if (!slug) {
+	return Astro.redirect("/404");
+}
+
+const { entry: page, cacheHint } = await getEmDashEntry("pages", slug);
+
+if (!page) {
+	return Astro.redirect("/404");
+}
+
+if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
+---
+
+<Base title={page.data.title}>
+	<article class="page">
+		<header class="page-header">
+			<h1 class="page-title" {...page.edit.title}>
+				{page.data.title}
+			</h1>
+		</header>
+
+		<div class="page-content" {...page.edit.content}>
+			<PortableText value={page.data.content} />
+		</div>
+	</article>
+</Base>
+
+<style>
+	.page {
+		max-width: var(--max-width);
+		margin: 0 auto;
+		padding: var(--spacing-2xl) var(--spacing-lg) var(--spacing-4xl);
+	}
+
+	.page-header {
+		margin-bottom: var(--spacing-2xl);
+	}
+
+	.page-title {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-4xl);
+		font-weight: var(--font-weight-display);
+		line-height: var(--leading-tight);
+	}
+
+	.page-content {
+		font-size: var(--font-size-base);
+		line-height: var(--leading-relaxed);
+	}
+
+	.page-content :global(p) {
+		margin-bottom: 1.5em;
+	}
+
+	.page-content :global(h2) {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-2xl);
+		font-weight: var(--font-weight-heading);
+		margin-top: 2.5em;
+		margin-bottom: 0.75em;
+	}
+
+	.page-content :global(h3) {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-xl);
+		font-weight: var(--font-weight-heading);
+		margin-top: 2em;
+		margin-bottom: 0.5em;
+	}
+
+	.page-content :global(blockquote) {
+		margin: 2em 0;
+		padding-left: var(--spacing-xl);
+		border-left: 2px solid var(--color-brand);
+		color: var(--color-muted);
+		font-family: var(--font-heading);
+		font-style: italic;
+		font-size: var(--font-size-lg);
+	}
+
+	.page-content :global(ul),
+	.page-content :global(ol) {
+		margin-bottom: 1.5em;
+		padding-left: 1.25em;
+	}
+
+	.page-content :global(li) {
+		margin-bottom: 0.5em;
+	}
+
+	.page-content :global(img) {
+		margin: 2em 0;
+		border-radius: var(--radius);
+	}
+
+	@media (max-width: 768px) {
+		.page-title {
+			font-size: var(--font-size-3xl);
+		}
+	}
+</style>
