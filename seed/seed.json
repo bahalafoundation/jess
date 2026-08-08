@@ -2,13 +2,13 @@
 	"$schema": "https://emdashcms.com/seed.schema.json",
 	"version": "1",
 	"meta": {
-		"name": "Portfolio Starter",
-		"description": "A portfolio for showcasing creative work",
+		"name": "Jess Cole",
+		"description": "Writer and teacher in Boston — fiction, poetry, essays, and writing workshops",
 		"author": "EmDash"
 	},
 	"settings": {
-		"title": "Studio",
-		"tagline": "Design & Development"
+		"title": "Jess Cole",
+		"tagline": "Writing about place and identity"
 	},
 	"collections": [
 		{
@@ -154,20 +154,20 @@
 			"collections": ["projects"],
 			"terms": [
 				{
-					"slug": "branding",
-					"label": "Branding"
+					"slug": "fiction",
+					"label": "Fiction"
 				},
 				{
-					"slug": "web",
-					"label": "Web Design"
+					"slug": "poetry",
+					"label": "Poetry"
 				},
 				{
-					"slug": "print",
-					"label": "Print"
+					"slug": "essays",
+					"label": "Essays"
 				},
 				{
-					"slug": "photography",
-					"label": "Photography"
+					"slug": "teaching",
+					"label": "Teaching"
 				}
 			]
 		},
@@ -179,32 +179,24 @@
 			"collections": ["projects"],
 			"terms": [
 				{
+					"slug": "place",
+					"label": "Place"
+				},
+				{
 					"slug": "identity",
 					"label": "Identity"
 				},
 				{
-					"slug": "ui-ux",
-					"label": "UI/UX"
+					"slug": "memory",
+					"label": "Memory"
 				},
 				{
-					"slug": "development",
-					"label": "Development"
+					"slug": "craft",
+					"label": "Craft"
 				},
 				{
-					"slug": "art-direction",
-					"label": "Art Direction"
-				},
-				{
-					"slug": "packaging",
-					"label": "Packaging"
-				},
-				{
-					"slug": "ecommerce",
-					"label": "E-commerce"
-				},
-				{
-					"slug": "editorial",
-					"label": "Editorial"
+					"slug": "novel",
+					"label": "Novel"
 				}
 			]
 		}
@@ -223,6 +215,11 @@
 					"type": "custom",
 					"label": "Classes",
 					"url": "/classes"
+				},
+				{
+					"type": "custom",
+					"label": "About",
+					"url": "/about"
 				},
 				{
 					"type": "custom",
@@ -247,7 +244,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "We are a small design studio focused on creating meaningful work for thoughtful clients. Founded in 2020, we've had the privilege of working with brands across technology, culture, and the arts.",
+									"text": "Jess Cole is a writer and teacher living in Boston with her son. Her work — fiction, poetry, and essays — keeps circling the same two questions: what a place does to the people who live in it, and what those people carry with them when they leave.",
 									"_key": "k1"
 								}
 							],
@@ -259,7 +256,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "Our approach is simple: listen carefully, think deeply, and craft with intention. We believe that good design is invisible — it gets out of the way and lets the work speak for itself.",
+									"text": "She studied International Relations and French at Boston University, earned an M.A. in English at UC Davis, and wrote a novel as her doctoral dissertation at the University of Tennessee, Knoxville. Along the way she has published articles, book chapters, short fiction, and Pushcart-nominated poems.",
 									"_key": "k3"
 								}
 							],
@@ -271,7 +268,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "What we do",
+									"text": "Teaching",
 									"_key": "k5"
 								}
 							],
@@ -283,11 +280,23 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "We specialize in brand identity, web design, and art direction. Whether you need a complete visual identity or a single website, we bring the same level of care and attention to every project.",
+									"text": "Jess has taught college writing for years, including as writer-in-residence and visiting professor at the University of Graz in Austria and at the ProArts colleges in Boston. She now teaches small generative workshops — essays, fiction, and the stories of place — and works as a book coach at Bloomsday Literary, helping writers carry a manuscript from first draft to finished book.",
 									"_key": "k7"
 								}
 							],
 							"_key": "k6"
+						},
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "If you're curious about a class or want help with a manuscript, get in touch — she reads everything.",
+									"_key": "k9"
+								}
+							],
+							"_key": "k8"
 						}
 					]
 				}
@@ -295,24 +304,24 @@
 		],
 		"classes": [
 			{
-				"id": "film-photography-workshop",
-				"slug": "film-photography-workshop",
+				"id": "the-personal-essay",
+				"slug": "the-personal-essay",
 				"status": "published",
 				"data": {
-					"title": "Shooting on Film",
-					"summary": "A hands-on introduction to medium format film photography — metering, composition, and slowing down. Cameras provided.",
+					"title": "The Personal Essay",
+					"summary": "A generative afternoon on the essay — finding the true subject under the one you thought you were writing about. All levels welcome.",
 					"featured_image": {
 						"$media": {
-							"url": "https://images.unsplash.com/photo-1495121553079-4c61bcce1894?w=1200&h=900&fit=crop",
-							"alt": "A medium format film camera on a wooden table",
-							"filename": "photo-1495121553079-4c61bcce1894.jpg"
+							"url": "https://images.unsplash.com/photo-1517842645767-c639042777db?w=1200&h=900&fit=crop",
+							"alt": "An open notebook with handwritten pages and a pen",
+							"filename": "photo-1517842645767-c639042777db.jpg"
 						}
 					},
-					"start_time": "2026-09-19T10:00:00-07:00",
-					"end_time": "2026-09-19T14:00:00-07:00",
-					"location": "Studio, San Francisco",
+					"start_time": "2026-09-19T13:00:00-04:00",
+					"end_time": "2026-09-19T16:00:00-04:00",
+					"location": "Boston, MA",
 					"capacity": 8,
-					"price": "$120",
+					"price": "$95",
 					"content": [
 						{
 							"_type": "block",
@@ -320,7 +329,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "Film forces patience. In this half-day workshop we cover loading and metering a medium format camera, reading light without a screen, and composing when every frame costs something. We end with a short walk to shoot a roll together.",
+									"text": "Every essay has two subjects: the thing it's about, and the thing it's really about. In this three-hour workshop we read a few short essays that make that gap visible, then write into our own material with timed prompts. You'll leave with two rough starts and a way of asking your drafts what they're actually up to.",
 									"_key": "k1"
 								}
 							],
@@ -338,7 +347,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "Just yourself and comfortable shoes. Cameras, film, and development for one roll are included in the price. No prior experience needed.",
+									"text": "A notebook and something to write with — or a laptop, if that's how you draft. No prior workshop experience needed, and nothing has to be shared aloud unless you want to.",
 									"_key": "k5"
 								}
 							],
@@ -348,24 +357,24 @@
 				}
 			},
 			{
-				"id": "brand-identity-intensive",
-				"slug": "brand-identity-intensive",
+				"id": "writing-place",
+				"slug": "writing-place",
 				"status": "published",
 				"data": {
-					"title": "Brand Identity Intensive",
-					"summary": "One day, one brand: take a real brief from research to a presented identity concept. For designers who want a sharper process.",
+					"title": "Writing Place",
+					"summary": "A workshop on setting as more than backdrop — how a street, a kitchen, or a whole city can carry a story's meaning.",
 					"featured_image": {
 						"$media": {
-							"url": "https://images.unsplash.com/photo-1561070791-2526d30994b5?w=1200&h=900&fit=crop",
-							"alt": "Sketchbooks and printed logo explorations on a desk",
-							"filename": "photo-1561070791-2526d30994b5.jpg"
+							"url": "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=1200&h=900&fit=crop",
+							"alt": "An open book and coffee on a wooden table by a window",
+							"filename": "photo-1456513080510-7bf3a84b82f8.jpg"
 						}
 					},
-					"start_time": "2026-10-10T09:30:00-07:00",
-					"end_time": "2026-10-10T17:00:00-07:00",
-					"location": "Studio, San Francisco",
+					"start_time": "2026-10-17T10:00:00-04:00",
+					"end_time": "2026-10-17T13:00:00-04:00",
+					"location": "Boston, MA",
 					"capacity": 10,
-					"price": "$250",
+					"price": "$95",
 					"content": [
 						{
 							"_type": "block",
@@ -373,7 +382,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "We run the day the way we run a real project: a morning of research and positioning, an afternoon of wordmark and system sketches, and a final hour presenting to the group as if they were the client.",
+									"text": "Place is where fiction and memory keep their evidence. We'll look at how writers make a setting do real work — carrying class, history, and longing without announcing any of it — and then write from places you know well enough to be honest about. Expect close reading, timed generative writing, and gentle feedback in pairs.",
 									"_key": "k1"
 								}
 							],
@@ -391,7 +400,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "Working designers and serious students. You should be comfortable in your design tool of choice — the day is about process and critique, not software.",
+									"text": "Anyone writing fiction or nonfiction where the where matters — which is nearly everyone. The class is capped at ten so there's time for every voice.",
 									"_key": "k5"
 								}
 							],
@@ -401,22 +410,22 @@
 				}
 			},
 			{
-				"id": "editorial-layout-evening",
-				"slug": "editorial-layout-evening",
+				"id": "short-fiction-first-drafts",
+				"slug": "short-fiction-first-drafts",
 				"status": "published",
 				"data": {
-					"title": "Editorial Layout, An Evening",
-					"summary": "Grids, type hierarchy, and pacing across spreads — the fundamentals of print layout in one focused evening session.",
+					"title": "Short Fiction: First Drafts",
+					"summary": "An evening for getting a story started — momentum over polish, with prompts designed to outrun your inner editor.",
 					"featured_image": {
 						"$media": {
-							"url": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=1200&h=900&fit=crop",
-							"alt": "Open magazine spreads laid out on a table",
-							"filename": "photo-1544716278-ca5e3f4abd8c.jpg"
+							"url": "https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=1200&h=900&fit=crop",
+							"alt": "A desk with notebooks, books, and a warm lamp",
+							"filename": "photo-1503676260728-1c00da094a0b.jpg"
 						}
 					},
-					"start_time": "2026-11-05T18:30:00-08:00",
-					"end_time": "2026-11-05T21:00:00-08:00",
-					"location": "Studio, San Francisco",
+					"start_time": "2026-11-12T18:30:00-05:00",
+					"end_time": "2026-11-12T21:00:00-05:00",
+					"location": "Boston, MA",
 					"capacity": 12,
 					"price": "$60",
 					"content": [
@@ -426,7 +435,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "Using spreads from The Archive catalog as our case study, we look at how a grid gets built, how type hierarchy carries a reader through a page, and how pacing works across a sequence of spreads. Bring a magazine you love and we'll take a few apart together.",
+									"text": "First drafts die of self-consciousness more often than lack of talent. This evening session is built for momentum: a short craft talk on openings, then three rounds of timed writing from prompts that give you a character, a place, and a problem before your inner editor wakes up. You'll leave with the raw material of at least one story.",
 									"_key": "k1"
 								}
 							],
@@ -438,19 +447,19 @@
 		],
 		"projects": [
 			{
-				"id": "meridian-brand",
-				"slug": "meridian-brand",
+				"id": "short-fiction",
+				"slug": "short-fiction",
 				"status": "published",
 				"data": {
-					"title": "Meridian",
-					"client": "Meridian Collective",
-					"year": "2024",
-					"summary": "A complete brand identity for a creative collective bringing together artists and technologists.",
+					"title": "Short Fiction",
+					"client": "Various journals",
+					"year": "2018–2025",
+					"summary": "Published short stories about people caught between the places that made them and the places they've landed.",
 					"featured_image": {
 						"$media": {
-							"url": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&h=900&fit=crop",
-							"alt": "Meridian cover image",
-							"filename": "photo-1558618666-fcd25c85cd64.jpg"
+							"url": "https://images.unsplash.com/photo-1455390582262-044cdead277a?w=1200&h=900&fit=crop",
+							"alt": "A vintage typewriter with a page mid-sentence",
+							"filename": "photo-1455390582262-044cdead277a.jpg"
 						}
 					},
 					"content": [
@@ -460,7 +469,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "Meridian Collective needed a visual identity that could bridge the gap between traditional art and emerging technology. The challenge was to create something that felt timeless yet forward-looking.",
+									"text": "The stories tend to start with a place — a rented kitchen in Graz, a triple-decker in Boston, a Tennessee highway at night — and follow the people who can't quite belong to it. Several have appeared in literary journals; more are always in the drawer, getting rewritten.",
 									"_key": "k1"
 								}
 							],
@@ -472,7 +481,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "The approach",
+									"text": "What they circle",
 									"_key": "k3"
 								}
 							],
@@ -484,60 +493,35 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "We developed a wordmark that combines classical typography with subtle geometric forms. The color palette draws from both digital interfaces and natural materials, creating a bridge between worlds.",
+									"text": "Displacement, mostly — the ordinary kind. A character moves for school, for work, for someone else's dream, and the story watches what the new place asks them to give up. The endings are rarely tidy. The good ones weren't tidy in life either.",
 									"_key": "k5"
 								}
 							],
 							"_key": "k4"
-						},
-						{
-							"_type": "block",
-							"style": "h2",
-							"children": [
-								{
-									"_type": "span",
-									"text": "The result",
-									"_key": "k7"
-								}
-							],
-							"_key": "k6"
-						},
-						{
-							"_type": "block",
-							"style": "normal",
-							"children": [
-								{
-									"_type": "span",
-									"text": "The new identity has been applied across print and digital touchpoints, from business cards to a fully responsive website. Meridian has received positive feedback from both artists and technologists alike.",
-									"_key": "k9"
-								}
-							],
-							"_key": "k8"
 						}
 					]
 				},
 				"taxonomies": {
-					"category": ["branding"],
-					"tag": ["identity", "art-direction"]
+					"category": ["fiction"],
+					"tag": ["place", "identity"]
 				}
 			},
 			{
-				"id": "volta-web",
-				"slug": "volta-web",
+				"id": "poems",
+				"slug": "poems",
 				"status": "published",
 				"data": {
-					"title": "Volta",
-					"client": "Volta Energy",
-					"year": "2024",
-					"summary": "Website design for a renewable energy startup making clean power accessible to everyone.",
+					"title": "Poems",
+					"client": "Various journals",
+					"year": "2016–2025",
+					"summary": "Pushcart-nominated poems — compressed, image-driven, and rooted in specific rooms and streets.",
 					"featured_image": {
 						"$media": {
-							"url": "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&h=900&fit=crop",
-							"alt": "Volta cover image",
-							"filename": "photo-1497366216548-37526070297c.jpg"
+							"url": "https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=1200&h=900&fit=crop",
+							"alt": "An open book with pages fanned in soft light",
+							"filename": "photo-1504868584819-f8e8b4b6d7e3.jpg"
 						}
 					},
-					"url": "https://volta.example.com",
 					"content": [
 						{
 							"_type": "block",
@@ -545,7 +529,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "Volta is on a mission to make renewable energy accessible to everyone. They needed a website that could explain complex technology simply while inspiring trust in potential customers.",
+									"text": "The poems are where the compression happens — what takes a story twenty pages, a poem has to do in twenty lines. Two have been nominated for the Pushcart Prize. Most begin as field notes: something overheard on the Green Line, the particular light in a stairwell, a phrase in Austrian German that has no honest translation.",
 									"_key": "k1"
 								}
 							],
@@ -553,49 +537,36 @@
 						},
 						{
 							"_type": "block",
-							"style": "h2",
-							"children": [
-								{
-									"_type": "span",
-									"text": "Design principles",
-									"_key": "k3"
-								}
-							],
-							"_key": "k2"
-						},
-						{
-							"_type": "block",
 							"style": "normal",
 							"children": [
 								{
 									"_type": "span",
-									"text": "We focused on clarity and warmth. The design uses generous whitespace and a vibrant green accent that evokes growth and sustainability without feeling clichéd.",
-									"_key": "k5"
+									"text": "New work appears in journals now and then; a first collection is slowly assembling itself.",
+									"_key": "k3"
 								}
 							],
-							"_key": "k4"
+							"_key": "k2"
 						}
 					]
 				},
 				"taxonomies": {
-					"category": ["web"],
-					"tag": ["ui-ux", "development"]
+					"category": ["poetry"],
+					"tag": ["place", "memory"]
 				}
 			},
 			{
-				"id": "archive-print",
-				"slug": "archive-print",
+				"id": "essays-and-chapters",
+				"slug": "essays-and-chapters",
 				"status": "published",
 				"data": {
-					"title": "The Archive",
-					"client": "City Museum",
-					"year": "2023",
-					"summary": "Exhibition catalog and print materials for a retrospective on modernist architecture.",
+					"title": "Essays & Chapters",
+					"year": "2014–2025",
+					"summary": "Published articles and book chapters — on writing, teaching, and the way language carries identity across borders.",
 					"featured_image": {
 						"$media": {
-							"url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1200&h=900&fit=crop",
-							"alt": "The Archive cover image",
-							"filename": "photo-1507003211169-0a1dd7228f2d.jpg"
+							"url": "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=1200&h=900&fit=crop",
+							"alt": "A stack of well-read books on a table",
+							"filename": "photo-1512820790803-83ca734da794.jpg"
 						}
 					},
 					"content": [
@@ -605,7 +576,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "The Archive was a major exhibition at the City Museum, showcasing 50 years of modernist architecture through photographs, drawings, and models. We designed the complete print identity.",
+									"text": "The nonfiction runs alongside the creative work: articles and book chapters on writing pedagogy, on teaching college writing to students who arrive with more languages than confidence, and on what it means to write about a place as a guest in it — a question sharpened by two years teaching in Graz, Austria.",
 									"_key": "k1"
 								}
 							],
@@ -613,49 +584,37 @@
 						},
 						{
 							"_type": "block",
-							"style": "h2",
-							"children": [
-								{
-									"_type": "span",
-									"text": "The catalog",
-									"_key": "k3"
-								}
-							],
-							"_key": "k2"
-						},
-						{
-							"_type": "block",
 							"style": "normal",
 							"children": [
 								{
 									"_type": "span",
-									"text": "The 240-page catalog uses a strict grid system inspired by the work being exhibited. Full-bleed photography alternates with dense text spreads, creating a rhythm that echoes the exhibition layout.",
-									"_key": "k5"
+									"text": "The essays are also where the teaching and the writing talk to each other — much of what ends up in the workshops started as a problem worked out on the page here.",
+									"_key": "k3"
 								}
 							],
-							"_key": "k4"
+							"_key": "k2"
 						}
 					]
 				},
 				"taxonomies": {
-					"category": ["print"],
-					"tag": ["editorial", "art-direction"]
+					"category": ["essays"],
+					"tag": ["identity", "craft"]
 				}
 			},
 			{
-				"id": "coastal-photo",
-				"slug": "coastal-photo",
+				"id": "the-novel",
+				"slug": "the-novel",
 				"status": "published",
 				"data": {
-					"title": "Coastal",
-					"client": "Personal Project",
-					"year": "2023",
-					"summary": "A photographic study of the Pacific coastline, exploring the intersection of land, sea, and sky.",
+					"title": "The Novel",
+					"client": "University of Tennessee, Knoxville",
+					"year": "2020",
+					"summary": "A novel written as a doctoral dissertation — a long story about home, told from the far side of leaving it.",
 					"featured_image": {
 						"$media": {
-							"url": "https://images.unsplash.com/photo-1505142468610-359e7d316be0?w=1200&h=900&fit=crop",
-							"alt": "Coastal cover image",
-							"filename": "photo-1505142468610-359e7d316be0.jpg"
+							"url": "https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=1200&h=900&fit=crop",
+							"alt": "A dim library aisle lined with books",
+							"filename": "photo-1519682337058-a94d519337bc.jpg"
 						}
 					},
 					"content": [
@@ -665,7 +624,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "Coastal began as a weekend project and grew into a year-long exploration of the Pacific shoreline. Shot entirely on medium format film, the series captures the quiet drama of the coast.",
+									"text": "The novel was written as a doctoral dissertation at the University of Tennessee, Knoxville — a book-length answer to the question the shorter work keeps asking: whether you can ever really narrate the place you're from, or only the person it made.",
 									"_key": "k1"
 								}
 							],
@@ -677,7 +636,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "Process",
+									"text": "Where it stands",
 									"_key": "k3"
 								}
 							],
@@ -689,7 +648,7 @@
 							"children": [
 								{
 									"_type": "span",
-									"text": "Each image was made at dawn or dusk, when the light is softest and the beaches are empty. The slow process of shooting film encourages patience and intentionality — qualities that show in the final work.",
+									"text": "The dissertation draft is done; the revision — the part where a defensible manuscript becomes a readable book — is ongoing, in the gaps between teaching and coaching other people's manuscripts at Bloomsday Literary. It is patient work, and the book is patient with her.",
 									"_key": "k5"
 								}
 							],
@@ -698,8 +657,8 @@
 					]
 				},
 				"taxonomies": {
-					"category": ["photography"],
-					"tag": ["art-direction", "editorial"]
+					"category": ["fiction"],
+					"tag": ["novel", "place", "identity"]
 				}
 			}
 		]

@@ -15,9 +15,9 @@ interface Props {
 
 const { title, description, image, type = "website" } = Astro.props;
 const settings = await getSiteSettings();
-const siteTitle = settings?.title || "Studio";
+const siteTitle = settings?.title || "Jess Cole";
 const fullTitle = title ? `${title} — ${siteTitle}` : siteTitle;
-const siteDescription = settings?.tagline || "Design & Development";
+const siteDescription = settings?.tagline || "Writer & Teacher";
 const siteLogo = (settings?.logo as any)?.url ? settings.logo as
 	{ mediaId: string; alt?: string; url: string } : null;
 
@@ -100,7 +100,7 @@ const pageCtx = createPublicPageContext({
 						}
 					</span>
 					<p class="footer-tagline">
-						{settings?.tagline || "Design & Development"}
+						{settings?.tagline || "Writer & Teacher"}
 					</p>
 				</div>
 				<div class="footer-right">

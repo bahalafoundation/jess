@@ -8,7 +8,7 @@ const { entry: page, cacheHint } = await getEmDashEntry("pages", "about");
 if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
 ---
 
-<Base title="About" description="Learn more about who we are and what we do.">
+<Base title="About" description="Jess Cole is a writer and teacher in Boston, writing about place and identity.">
 	<div class="about-page">
 		<header class="about-header">
 			<h1 class="about-title" {...page?.edit?.title}>
@@ -28,22 +28,28 @@ if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
 
 		<aside class="about-sidebar">
 			<div class="sidebar-section">
-				<h3>Services</h3>
+				<h3>Writing & Teaching</h3>
 				<ul>
-					<li>Brand Identity</li>
-					<li>Web Design & Development</li>
-					<li>Print Design</li>
-					<li>Photography & Art Direction</li>
+					<li>Short Fiction & Essays</li>
+					<li>Poetry</li>
+					<li>Writing Workshops</li>
+					<li>Book Coaching at Bloomsday Literary</li>
 				</ul>
 			</div>
 
 			<div class="sidebar-section">
-				<h3>Contact</h3>
+				<h3>Elsewhere</h3>
 				<p>
-					<a href="mailto:hello@studio.example">hello@studio.example</a>
+					<a
+						href="https://www.bloomsdayliterary.com"
+						target="_blank"
+						rel="noopener noreferrer"
+					>
+						Bloomsday Literary →
+					</a>
 				</p>
 				<p>
-					<a href="/contact">Send us a message →</a>
+					<a href="/contact">Send a message →</a>
 				</p>
 			</div>
 		</aside>
