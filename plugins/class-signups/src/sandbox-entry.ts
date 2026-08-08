@@ -1,0 +1,233 @@
+import type { PluginContext, SandboxedPlugin } from "emdash/plugin";
+
+interface Signup {
+	classId: string;
+	className: string;
+	name: string;
+	email: string;
+	notes?: string;
+	createdAt: string;
+}
+
+interface ClassInfo {
+	id: string;
+	title: string;
+	startTime: Date | null;
+	capacity: number;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// 0.30 turns thrown Responses into opaque INTERNAL_ERRORs, so user-facing
+// failures are returned as { success: false, error } instead.
+function fail(error: string) {
+	return { success: false as const, error };
+}
+
+// Normalizes a content entry from ctx.content.get into the bits we need.
+async function getClass(ctx: PluginContext, classId: string): Promise<ClassInfo | null> {
+	if (!ctx.content) return null;
+	let entry: any;
+	try {
+		entry = await ctx.content.get("classes", classId);
+	} catch {
+		return null;
+	}
+	if (!entry) return null;
+	const data = entry.data && typeof entry.data === "object" ? entry.data : entry;
+	const capacity = Number(data.capacity);
+	const start = data.start_time ? new Date(data.start_time) : null;
+	return {
+		id: String(entry.id ?? classId),
+		title: String(data.title ?? "Untitled class"),
+		startTime: start && !Number.isNaN(start.getTime()) ? start : null,
+		capacity: Number.isFinite(capacity) && capacity > 0 ? capacity : Infinity,
+	};
+}
+
+async function countSignups(ctx: PluginContext, classId: string): Promise<number> {
+	return ctx.storage.signups.count({ classId });
+}
+
+function signupId(classId: string, email: string): string {
+	return `${classId}:${email.trim().toLowerCase()}`;
+}
+
+export default {
+	routes: {
+		signup: {
+			public: true,
+			handler: async (routeCtx: any, ctx: PluginContext) => {
+				if (routeCtx.request.method !== "POST") {
+					return fail("Method not allowed.");
+				}
+
+				const input = (routeCtx.input ?? {}) as Record<string, unknown>;
+				const classId = typeof input.classId === "string" ? input.classId.trim() : "";
+				const name = typeof input.name === "string" ? input.name.trim() : "";
+				const email = typeof input.email === "string" ? input.email.trim() : "";
+				const notes = typeof input.notes === "string" ? input.notes.trim().slice(0, 1000) : "";
+
+				if (!classId) return fail("Missing classId.");
+				if (!name || name.length > 200) return fail("Please provide your name.");
+				if (!EMAIL_RE.test(email)) return fail("Please provide a valid email address.");
+
+				const cls = await getClass(ctx, classId);
+				if (!cls) return fail("Class not found.");
+
+				if (cls.startTime && cls.startTime.getTime() < Date.now()) {
+					return { success: false, error: "Signups for this class have closed." };
+				}
+
+				const id = signupId(cls.id, email);
+				if (await ctx.storage.signups.exists(id)) {
+					return { success: true, alreadyRegistered: true };
+				}
+
+				const taken = await countSignups(ctx, cls.id);
+				if (taken >= cls.capacity) {
+					return { success: false, full: true, error: "This class is full." };
+				}
+
+				const record: Signup = {
+					classId: cls.id,
+					className: cls.title,
+					name,
+					email: email.toLowerCase(),
+					notes: notes || undefined,
+					createdAt: new Date().toISOString(),
+				};
+				await ctx.storage.signups.put(id, record);
+				ctx.log.info(`New signup for ${cls.title}`, { classId: cls.id });
+
+				const remaining = cls.capacity === Infinity ? null : cls.capacity - taken - 1;
+				return { success: true, remaining };
+			},
+		},
+
+		availability: {
+			public: true,
+			handler: async (routeCtx: any, ctx: PluginContext) => {
+				// GET requests don't populate routeCtx.input — read the query string
+				const url = new URL(routeCtx.request.url);
+				const classId = url.searchParams.get("classId")?.trim() ?? "";
+				if (!classId) return fail("Missing classId.");
+
+				const cls = await getClass(ctx, classId);
+				if (!cls) return fail("Class not found.");
+
+				const taken = await countSignups(ctx, cls.id);
+				const unlimited = cls.capacity === Infinity;
+				const closed = cls.startTime ? cls.startTime.getTime() < Date.now() : false;
+				return {
+					capacity: unlimited ? null : cls.capacity,
+					taken,
+					remaining: unlimited ? null : Math.max(0, cls.capacity - taken),
+					full: unlimited ? false : taken >= cls.capacity,
+					closed,
+				};
+			},
+		},
+
+		admin: {
+			handler: async (routeCtx: any, ctx: PluginContext) => {
+				const interaction = (routeCtx.input ?? {}) as { type?: string; page?: string };
+				if (interaction.type !== "page_load") return { blocks: [] };
+
+				// Drain all signups (bounded — a portfolio site's class list stays small)
+				const all: Array<{ id: string; data: Signup }> = [];
+				let cursor: string | undefined;
+				do {
+					const result = await ctx.storage.signups.query({
+						orderBy: { createdAt: "desc" },
+						limit: 200,
+						cursor,
+					});
+					all.push(...(result.items as Array<{ id: string; data: Signup }>));
+					cursor = result.hasMore ? result.cursor : undefined;
+				} while (cursor && all.length < 2000);
+
+				const byClass = new Map<string, Array<Signup>>();
+				for (const item of all) {
+					const list = byClass.get(item.data.classId) ?? [];
+					list.push(item.data);
+					byClass.set(item.data.classId, list);
+				}
+
+				const blocks: any[] = [
+					{ type: "header", text: "Class Signups" },
+					{
+						type: "stats",
+						stats: [
+							{ label: "Total signups", value: String(all.length) },
+							{ label: "Classes with signups", value: String(byClass.size) },
+						],
+					},
+				];
+
+				if (all.length === 0) {
+					blocks.push({
+						type: "section",
+						text: "No signups yet. They'll appear here as soon as someone registers through the site.",
+					});
+					return { blocks };
+				}
+
+				// Sort class groups by soonest upcoming session first
+				const groups = await Promise.all(
+					[...byClass.entries()].map(async ([classId, signups]) => ({
+						classId,
+						signups,
+						cls: await getClass(ctx, classId),
+					})),
+				);
+				groups.sort((a, b) => {
+					const ta = a.cls?.startTime?.getTime() ?? 0;
+					const tb = b.cls?.startTime?.getTime() ?? 0;
+					return ta - tb;
+				});
+
+				for (const group of groups) {
+					const title = group.cls?.title ?? group.signups[0]?.className ?? "Unknown class";
+					const when = group.cls?.startTime
+						? group.cls.startTime.toLocaleString("en-US", {
+								dateStyle: "medium",
+								timeStyle: "short",
+							})
+						: "unscheduled";
+					blocks.push({ type: "divider" });
+					blocks.push({ type: "section", text: `${title} — ${when}` });
+					if (group.cls && group.cls.capacity !== Infinity) {
+						blocks.push({
+							type: "meter",
+							label: "Spots filled",
+							value: group.signups.length,
+							max: group.cls.capacity,
+							custom_value: `${group.signups.length} / ${group.cls.capacity}`,
+						});
+					}
+					blocks.push({
+						type: "table",
+						columns: [
+							{ key: "name", label: "Name" },
+							{ key: "email", label: "Email" },
+							{ key: "notes", label: "Notes" },
+							{ key: "createdAt", label: "Signed up" },
+						],
+						rows: group.signups.map((s) => ({
+							name: s.name,
+							email: s.email,
+							notes: s.notes ?? "",
+							createdAt: new Date(s.createdAt).toLocaleString("en-US", {
+								dateStyle: "medium",
+								timeStyle: "short",
+							}),
+						})),
+					});
+				}
+
+				return { blocks };
+			},
+		},
+	},
+} satisfies SandboxedPlugin;

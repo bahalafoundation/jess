@@ -50,17 +50,20 @@ The design is intentionally restrained. Don't pile on colour, gradients, or deco
 
 ## Pages
 
-| Page           | Path           | What it shows                                                                                          |
-| -------------- | -------------- | ------------------------------------------------------------------------------------------------------ |
-| Home           | `/`            | Centred serif title + tagline, "Selected Work" grid                                                    |
-| Work index     | `/work`        | Heading + summary, tag filter chips, full grid                                                         |
-| Project detail | `/work/[slug]` | Project meta line, big serif title, summary, featured image, Portable Text body, optional gallery, URL |
-| About          | `/about`       | Page content (Portable Text)                                                                           |
-| Contact        | `/contact`     | Form + email / location / social column                                                                |
+| Page           | Path              | What it shows                                                                                          |
+| -------------- | ----------------- | ------------------------------------------------------------------------------------------------------ |
+| Home           | `/`               | Centred serif title + tagline, "Selected Work" grid                                                    |
+| Work index     | `/work`           | Heading + summary, tag filter chips, full grid                                                         |
+| Project detail | `/work/[slug]`    | Project meta line, big serif title, summary, featured image, Portable Text body, optional gallery, URL |
+| Classes index  | `/classes`        | Upcoming classes grid (date/time/price meta), past classes list                                        |
+| Class detail   | `/classes/[slug]` | Date/time/price meta, summary, featured image, Portable Text body, signup form with live spot count    |
+| About          | `/about`          | Page content (Portable Text)                                                                           |
+| Contact        | `/contact`        | Form + email / location / social column                                                                |
 
 ## Schema
 
 - `projects` collection: `title`, `featured_image`, `client`, `year`, `summary` (text), `content` (Portable Text), `gallery` (json -- optional array of `{ url, alt? }` records, see below), `url`.
+- `classes` collection: `title`, `featured_image`, `summary` (text), `content` (Portable Text), `start_time` (datetime, required), `end_time` (datetime), `location`, `capacity` (integer, required), `price` (string, freeform e.g. "$120" or "Free").
 - `pages` collection: `title`, `content` (Portable Text). Used for `/about`.
 - Taxonomies: `category`, `tag`. Used for filtering on the work index.
 - Single `primary` menu.
@@ -68,6 +71,24 @@ The design is intentionally restrained. Don't pile on colour, gradients, or deco
 Site settings have `title` and `tagline` -- both render on the home page (title as the centred serif heading, tagline as italic subtitle).
 
 The `gallery` field on `projects` is a JSON field, not an EmDash image field. It expects a literal array of `{ url: string, alt?: string }` records (a flat external URL plus optional alt text), and is rendered as-is by `src/pages/work/[slug].astro`. Do NOT confuse it with EmDash image fields like `featured_image`, which take `{ id, provider, alt }` objects from the media library. If you need media-library images in a gallery in the future, the right fix is to change the field type and renderer together.
+
+## Class signups
+
+Signups are handled by the first-party `class-signups` plugin in `plugins/class-signups/` (a pnpm workspace package registered in `astro.config.mjs`). It stores signups in plugin storage (not a content collection) and exposes:
+
+- `POST /_emdash/api/plugins/class-signups/signup` (public) -- `{ classId, name, email, notes? }`. `classId` is the class entry's database ULID (`entry.data.id`), not the slug. Enforces capacity, rejects signups after `start_time`, dedupes by email per class.
+- `GET /_emdash/api/plugins/class-signups/availability?classId=...` (public) -- `{ capacity, taken, remaining, full, closed }`.
+- An admin page (Admin UI → Class Signups) listing signups per class with a capacity meter, via the Block Kit `admin` route.
+
+Plugin API quirks on emdash 0.30: the entry module must `export default { routes } satisfies SandboxedPlugin` from `"emdash/plugin"` (`definePlugin()` fails at runtime for standard-format plugins); route responses are wrapped in a `{ success, data }` envelope by the host; GET requests don't populate `routeCtx.input` (parse `routeCtx.request.url` yourself); thrown `Response` objects become opaque 500s, so return `{ success: false, error }` for user-facing failures; non-GET requests need the `X-EmDash-Request: 1` header or a matching `Origin` (CSRF).
+
+## Local dev notes
+
+- `npx emdash dev` and `npx astro dev` spawn `pnpm`, which must be on `PATH` (the repo pins `packageManager: pnpm`).
+- `better-sqlite3` must be allowed to build (see `allowBuilds` in `pnpm-workspace.yaml`) -- the emdash CLI needs its native binding.
+- Astro 7's `astro dev` daemonizes; logs go to `.astro/dev.log`, stop with `npx astro dev stop`.
+- Seed **content** (demo entries, menus, settings) is only applied when setup completes -- on a fresh local DB, hit `/_emdash/api/setup/dev-bypass?redirect=/_emdash/admin` once. The schema alone auto-seeds on first request.
+- If pages start failing with `InvalidImageService` ("error loading the configured image service") and render truncated HTML at the first `<Image>`, the dev server's workerd bundle went stale after a vite dependency re-optimization (e.g. running `astro check` while the server is up, or a mid-session reload). It's transient dev-only state -- fix with `npx astro dev stop` and start again.
 
 ## Visual character
 

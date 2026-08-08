@@ -65,6 +65,65 @@
 			]
 		},
 		{
+			"slug": "classes",
+			"label": "Classes",
+			"labelSingular": "Class",
+			"supports": ["drafts", "revisions", "search", "seo"],
+			"fields": [
+				{
+					"slug": "title",
+					"label": "Title",
+					"type": "string",
+					"required": true,
+					"searchable": true
+				},
+				{
+					"slug": "featured_image",
+					"label": "Featured Image",
+					"type": "image"
+				},
+				{
+					"slug": "summary",
+					"label": "Summary",
+					"type": "text",
+					"searchable": true
+				},
+				{
+					"slug": "content",
+					"label": "Content",
+					"type": "portableText",
+					"searchable": true
+				},
+				{
+					"slug": "start_time",
+					"label": "Starts",
+					"type": "datetime",
+					"required": true
+				},
+				{
+					"slug": "end_time",
+					"label": "Ends",
+					"type": "datetime"
+				},
+				{
+					"slug": "location",
+					"label": "Location",
+					"type": "string"
+				},
+				{
+					"slug": "capacity",
+					"label": "Capacity",
+					"type": "integer",
+					"required": true
+				},
+				{
+					"slug": "price",
+					"label": "Price",
+					"type": "string"
+				}
+			]
+		},
+		{
 			"slug": "pages",
 			"label": "Pages",
 			"labelSingular": "Page",
@@ -162,6 +221,11 @@
 				},
 				{
 					"type": "custom",
+					"label": "Classes",
+					"url": "/classes"
+				},
+				{
+					"type": "custom",
 					"label": "Contact",
 					"url": "/contact"
 				}
@@ -224,6 +288,149 @@
 								}
 							],
 							"_key": "k6"
+						}
+					]
+				}
+			}
+		],
+		"classes": [
+			{
+				"id": "film-photography-workshop",
+				"slug": "film-photography-workshop",
+				"status": "published",
+				"data": {
+					"title": "Shooting on Film",
+					"summary": "A hands-on introduction to medium format film photography — metering, composition, and slowing down. Cameras provided.",
+					"featured_image": {
+						"$media": {
+							"url": "https://images.unsplash.com/photo-1495121553079-4c61bcce1894?w=1200&h=900&fit=crop",
+							"alt": "A medium format film camera on a wooden table",
+							"filename": "photo-1495121553079-4c61bcce1894.jpg"
+						}
+					},
+					"start_time": "2026-09-19T10:00:00-07:00",
+					"end_time": "2026-09-19T14:00:00-07:00",
+					"location": "Studio, San Francisco",
+					"capacity": 8,
+					"price": "$120",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "Film forces patience. In this half-day workshop we cover loading and metering a medium format camera, reading light without a screen, and composing when every frame costs something. We end with a short walk to shoot a roll together.",
+									"_key": "k1"
+								}
+							],
+							"_key": "k0"
+						},
+						{
+							"_type": "block",
+							"style": "h2",
+							"children": [{ "_type": "span", "text": "What to bring", "_key": "k3" }],
+							"_key": "k2"
+						},
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "Just yourself and comfortable shoes. Cameras, film, and development for one roll are included in the price. No prior experience needed.",
+									"_key": "k5"
+								}
+							],
+							"_key": "k4"
+						}
+					]
+				}
+			},
+			{
+				"id": "brand-identity-intensive",
+				"slug": "brand-identity-intensive",
+				"status": "published",
+				"data": {
+					"title": "Brand Identity Intensive",
+					"summary": "One day, one brand: take a real brief from research to a presented identity concept. For designers who want a sharper process.",
+					"featured_image": {
+						"$media": {
+							"url": "https://images.unsplash.com/photo-1561070791-2526d30994b5?w=1200&h=900&fit=crop",
+							"alt": "Sketchbooks and printed logo explorations on a desk",
+							"filename": "photo-1561070791-2526d30994b5.jpg"
+						}
+					},
+					"start_time": "2026-10-10T09:30:00-07:00",
+					"end_time": "2026-10-10T17:00:00-07:00",
+					"location": "Studio, San Francisco",
+					"capacity": 10,
+					"price": "$250",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "We run the day the way we run a real project: a morning of research and positioning, an afternoon of wordmark and system sketches, and a final hour presenting to the group as if they were the client.",
+									"_key": "k1"
+								}
+							],
+							"_key": "k0"
+						},
+						{
+							"_type": "block",
+							"style": "h2",
+							"children": [{ "_type": "span", "text": "Who it's for", "_key": "k3" }],
+							"_key": "k2"
+						},
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "Working designers and serious students. You should be comfortable in your design tool of choice — the day is about process and critique, not software.",
+									"_key": "k5"
+								}
+							],
+							"_key": "k4"
+						}
+					]
+				}
+			},
+			{
+				"id": "editorial-layout-evening",
+				"slug": "editorial-layout-evening",
+				"status": "published",
+				"data": {
+					"title": "Editorial Layout, An Evening",
+					"summary": "Grids, type hierarchy, and pacing across spreads — the fundamentals of print layout in one focused evening session.",
+					"featured_image": {
+						"$media": {
+							"url": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=1200&h=900&fit=crop",
+							"alt": "Open magazine spreads laid out on a table",
+							"filename": "photo-1544716278-ca5e3f4abd8c.jpg"
+						}
+					},
+					"start_time": "2026-11-05T18:30:00-08:00",
+					"end_time": "2026-11-05T21:00:00-08:00",
+					"location": "Studio, San Francisco",
+					"capacity": 12,
+					"price": "$60",
+					"content": [
+						{
+							"_type": "block",
+							"style": "normal",
+							"children": [
+								{
+									"_type": "span",
+									"text": "Using spreads from The Archive catalog as our case study, we look at how a grid gets built, how type hierarchy carries a reader through a page, and how pacing works across a sequence of spreads. Bring a magazine you love and we'll take a few apart together.",
+									"_key": "k1"
+								}
+							],
+							"_key": "k0"
 						}
 					]
 				}
