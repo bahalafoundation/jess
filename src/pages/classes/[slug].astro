@@ -20,6 +20,7 @@ if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
 const start = new Date(String(cls.data.start_time));
 const end = cls.data.end_time ? new Date(String(cls.data.end_time)) : null;
 const isPast = start.getTime() < Date.now();
+const checkoutStatus = Astro.url.searchParams.get("checkout");
 
 const dateLine = start.toLocaleDateString("en-US", {
 	weekday: "long",
@@ -92,6 +93,14 @@ function getImageSrc(img: unknown): string | undefined {
 				<div class="class-content">
 					<PortableText value={cls.data.content} />
 				</div>
+			)
+		}
+
+		{
+			checkoutStatus === "cancelled" && (
+				<p class="checkout-cancelled-note">
+					Checkout was cancelled — your spot wasn't reserved. You can try again below.
+				</p>
 			)
 		}
 
@@ -234,6 +243,7 @@ function getImageSrc(img: unknown): string | undefined {
 					},
 					body: JSON.stringify({
 						classId,
+						classUrl: window.location.href,
 						name: formData.get("name"),
 						email: formData.get("email"),
 						notes: formData.get("notes") || undefined,
@@ -242,6 +252,10 @@ function getImageSrc(img: unknown): string | undefined {
 				const data = unwrap(await res.json());
 
 				if (res.ok && data?.success) {
+					if (data.checkoutUrl) {
+						window.location.href = data.checkoutUrl;
+						return;
+					}
 					if (data.alreadyRegistered) {
 						successMessage.textContent =
 							"You're already signed up for this class — see you there.";
@@ -382,6 +396,12 @@ function getImageSrc(img: unknown): string | undefined {
 
 	.signup-closed-note {
 		color: var(--color-muted);
+	}
+
+	.checkout-cancelled-note {
+		margin-bottom: var(--spacing-lg);
+		color: var(--color-danger);
+		font-size: var(--font-size-sm);
 	}
 
 	.signup-closed-note a {
