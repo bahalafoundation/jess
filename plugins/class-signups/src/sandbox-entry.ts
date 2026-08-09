@@ -162,6 +162,7 @@ async function renderSignupsDashboard(ctx: PluginContext) {
 async function renderPaymentSettings(ctx: PluginContext) {
 	const stripeSecretKey = (await ctx.kv.get<string>("settings:stripeSecretKey")) ?? "";
 	const emdashInviteToken = (await ctx.kv.get<string>("settings:emdashInviteToken")) ?? "";
+	const internalWebhookSecret = (await ctx.kv.get<string>("settings:internalWebhookSecret")) ?? "";
 	return {
 		blocks: [
 			{ type: "header", text: "Payment Settings" },
@@ -184,6 +185,12 @@ async function renderPaymentSettings(ctx: PluginContext) {
 						action_id: "emdashInviteToken",
 						label: "EmDash Invite Token",
 						initial_value: emdashInviteToken,
+					},
+					{
+						type: "secret_input",
+						action_id: "internalWebhookSecret",
+						label: "Internal Webhook Secret",
+						initial_value: internalWebhookSecret,
 					},
 				],
 				submit: { label: "Save", action_id: "save" },
