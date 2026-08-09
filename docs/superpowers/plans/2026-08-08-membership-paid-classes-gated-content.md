@@ -75,7 +75,7 @@ Add a new top-level collection entry to `seed/seed.json`'s collections array (fo
       "searchable": true
     },
     {
-      "slug": "published_at",
+      "slug": "published_on",
       "label": "Published",
       "type": "datetime"
     }
@@ -1061,8 +1061,8 @@ if (error) {
 if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
 
 const sorted = [...(dispatches ?? [])].sort((a, b) => {
-	const at = a.data.published_at ? new Date(String(a.data.published_at)).getTime() : 0;
-	const bt = b.data.published_at ? new Date(String(b.data.published_at)).getTime() : 0;
+	const at = a.data.published_on ? new Date(String(a.data.published_on)).getTime() : 0;
+	const bt = b.data.published_on ? new Date(String(b.data.published_on)).getTime() : 0;
 	return bt - at;
 });
 ---

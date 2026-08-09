@@ -114,7 +114,7 @@ Signup records gain two new pieces of state beyond what's tracked today: the ori
 - `featured_image` (image)
 - `summary` (text) — always public; this is the teaser that sells membership
 - `content` (Portable Text) — member-only
-- `published_at` (datetime)
+- `published_on` (datetime)
 
 ### New pages
 
@@ -130,7 +130,7 @@ A public-facing login page (distinct from `/_emdash/admin/login`) that drives Em
 | Collection/Plugin | Change |
 |---|---|
 | `classes` | add `price_cents` (integer, optional) |
-| `dispatches` (new) | `title`, `featured_image`, `summary`, `content`, `published_at` |
+| `dispatches` (new) | `title`, `featured_image`, `summary`, `content`, `published_on` |
 | `class-signups` plugin | add `checkout/create` route (Checkout Session creation) and `webhooks/confirm` route (records signup + triggers invite, called only by our own webhook endpoint), `apiKey`/`emdashInviteToken` plugin secrets, session-id tracking for idempotency, `network:request` capability with Stripe's API host and the site's own domain in `allowedHosts` |
 | `src/pages/api/webhooks/stripe.ts` (new) | plain Astro endpoint; raw-body Stripe signature verification against `STRIPE_WEBHOOK_SECRET` (deployment env var, not a plugin secret — see Component 2) |
 | `newsletter` plugin (new) | `apiKey` setting, `subscribe` route |
