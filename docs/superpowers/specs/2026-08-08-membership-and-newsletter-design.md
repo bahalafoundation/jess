@@ -57,7 +57,7 @@ A new sandboxed plugin, `newsletter`.
 
 - **Settings:** one `admin.settingsSchema` field, `apiKey` (type `secret`) — the Buttondown API key, entered once in **Admin → Plugins → newsletter** and encrypted at rest by EmDash (same mechanism used for other plugin secrets).
 - **Route:** `subscribe` (`POST /_emdash/api/plugins/newsletter/subscribe`), public. Accepts `{ email }`, calls Buttondown's subscribers API with the stored key, returns `{ success: true }` or `{ success: false, error }` (per the project's established plugin convention — thrown `Response` objects become opaque 500s, so failures must be returned, not thrown).
-- **Frontend:** a second form added to `src/pages/contact.astro`, alongside the existing message form (confirmed placement: contact page only). On success, show an inline confirmation; on failure, an inline error — no page reload, following the existing contact form's POST/redisplay pattern is fine here too (no client JS required).
+- **Frontend:** a second form added to `src/pages/contact.astro`, alongside the existing message form (confirmed placement: contact page only). Unlike the existing message form — which posts back to `/contact` itself and re-renders server-side — the plugin's `subscribe` route lives at a separate JSON endpoint (`/_emdash/api/plugins/newsletter/subscribe`), so a plain HTML form post would navigate the browser to a raw JSON response instead of showing an inline result. This form needs client-side `fetch` (a small inline `<script>`) to call the route and swap in a success/error message without a page reload — the implementation plan should check how `class-signups`' own frontend calls its plugin routes and follow the same pattern for consistency.
 - **Failure handling:** if Buttondown's API errors or is unreachable, the route returns `success: false` with a user-facing message ("Something went wrong, try again"); it must not throw and must not affect the existing contact-message form on the same page.
 
 No changes to any existing collection or plugin are needed for this piece.
@@ -76,11 +76,15 @@ Add `price_cents` (integer, optional) to the `classes` collection. `price` (the 
 The plugin's signup route branches on whether the target class has `price_cents` set:
 
 - **Free class:** unchanged — validates capacity/close-time, records the signup, returns availability, exactly as it does today.
-- **Paid class:** instead of recording the signup directly, creates a Stripe Checkout Session (`mode: "payment"`, amount = `price_cents`, metadata carrying `classId`, `name`, `email`, `notes`) and returns the session URL for the browser to redirect to. The signup is **not** recorded yet at this point — only after payment succeeds.
+- **Paid class:** applies the same capacity/close-time check as the free path *before* creating a Checkout Session (`mode: "payment"`, amount = `price_cents`, metadata carrying `classId`, `name`, `email`, `notes`) and returns the session URL for the browser to redirect to. The signup is **not** recorded yet at this point — only after payment succeeds. This pre-check narrows but does not eliminate overselling: a class can still fill up in the window between Checkout Session creation and the webhook confirming payment (two people checking out concurrently for the last spot). When the webhook's own capacity check fails after a successful charge, the signup is **not** silently dropped — it's recorded in an "oversold, needs resolution" state surfaced on the plugin's admin page, since there is no automated refund flow in this design; resolving it (refund or manual capacity exception) is a manual step for Jess.
 
 ### Stripe webhook handler
 
-A new plugin route, `webhooks/stripe`, receiving `checkout.session.completed` events (Stripe's standard webhook signature verification against a stored `webhookSecret`, both `apiKey` and `webhookSecret` added as `secret` settings fields alongside the plugin's existing settings).
+A new plugin route, `webhooks/stripe`, receiving `checkout.session.completed` events (Stripe's standard webhook signature verification against a stored `webhookSecret`, both `apiKey` and `webhookSecret` added as `secret` settings fields alongside the plugin's existing settings). The route must be marked `public: true` — like the existing `signup`/`availability` routes — since Stripe's webhook requests carry no EmDash session or admin token.
+
+**Open question for the implementation plan (higher-risk than the ones below):** Stripe's signature verification (`stripe.webhooks.constructEvent`) requires the exact raw, unparsed request body — EmDash's plugin route dispatcher appears to parse POST bodies into `routeCtx.input` via a Zod schema before the handler runs. Whether/how a sandboxed route can get at the raw body needs to be confirmed against the current plugin API before this is buildable as described; if there's no raw-body access, this may need to be a native (not sandboxed) plugin route instead.
+
+**Second open question:** this project's non-GET plugin routes normally require the `X-EmDash-Request` header or a matching `Origin` to pass CSRF checks (see CLAUDE.md's plugin quirks). Stripe's webhook requests will carry neither. Marking the route `public: true` addresses session/token auth, but the plan needs to confirm separately whether `public: true` (or some other flag) also exempts a route from the CSRF check — otherwise Stripe's deliveries will be rejected before the handler's own signature verification ever runs.
 
 On receipt:
 
@@ -93,7 +97,13 @@ On receipt:
    - If a user already exists (they're already a member, or already have some other role), do nothing — an existing Editor/Admin who buys a class doesn't get demoted or re-invited.
 6. Log failures (e.g., invite call fails) rather than throwing, and surface them somewhere Jess can see (plugin admin page, same pattern as the existing signups list) so she can manually invite the payer from **Settings → Users** as a fallback — the payment and signup record are the source of truth either way.
 
-**Open question for the implementation plan:** which specific plugin capability grants a sandboxed plugin route permission to call EmDash's user-invite/admin endpoints (vs. content/storage capabilities the plugin already has). This needs to be confirmed against the plugin capability system during planning — worst case, the webhook handler calls EmDash's own REST API (`POST /_emdash/api/auth/invite`) via `ctx.http.fetch` using a stored admin personal access token, the same way any external client would.
+Signup records gain two new pieces of state beyond what's tracked today: the originating Stripe session ID (for idempotency) and, for the rare oversold case, a resolution status the admin page surfaces. These live in the plugin's existing (schemaless) storage alongside the current signup fields — no separate collection needed.
+
+**Open question, but treat the fallback as the likely primary path, not a worst case:** the documented sandboxed-plugin capability surface only lists read access to users (`users:read` — `get`/`getByEmail`/`list`), with no write/invite capability. So the plan should assume the webhook handler will need to call EmDash's own REST API (`POST /_emdash/api/auth/invite`) via `ctx.http.fetch`, using a stored admin personal access token — not as a fallback, but as the design. This has knock-on requirements not yet reflected elsewhere in this doc:
+
+- The plugin needs a `network:request` capability with an `allowedHosts` entry for the site's own domain.
+- The admin PAT used to call the invite endpoint is itself a secret and must be added as a `secret` settings field (see Data Model summary below), rotated the same way other plugin secrets are.
+- Confirm the `/api/auth/invite` endpoint's exact request/response shape and auth requirements (it's documented as an admin-panel action; confirm it accepts PAT bearer auth, not just an admin session cookie) before implementation.
 
 ### Class detail page
 
@@ -124,13 +134,13 @@ A public-facing login page (distinct from `/_emdash/admin/login`) that drives Em
 |---|---|
 | `classes` | add `price_cents` (integer, optional) |
 | `dispatches` (new) | `title`, `featured_image`, `summary`, `content`, `published_at` |
-| `class-signups` plugin | add Stripe Checkout branch, `webhooks/stripe` route, `apiKey`/`webhookSecret` settings, session-id tracking for idempotency |
+| `class-signups` plugin | add Stripe Checkout branch, `webhooks/stripe` route (`public: true`), `apiKey`/`webhookSecret`/`emdashInviteToken` settings, session-id tracking for idempotency, `network:request` capability with the site's own domain in `allowedHosts` |
 | `newsletter` plugin (new) | `apiKey` setting, `subscribe` route |
 
 ## Security considerations
 
 - Stripe webhook signatures must be verified; unverified requests are rejected outright.
-- The Buttondown and Stripe API keys/secrets are stored as encrypted plugin secrets, never in `.env` or committed config.
+- The Buttondown API key, Stripe API key/webhook secret, and the admin personal access token used to call EmDash's invite endpoint are all stored as encrypted plugin secrets, never in `.env` or committed config.
 - Gated `dispatches` content must never be present in server-rendered output for an unauthorized session — verify this explicitly (e.g. by checking the raw HTML response, not just what's visually hidden) during implementation.
 - The invite-triggering webhook handler must not be spoofable into inviting arbitrary emails as Subscribers — it only acts on verified Stripe events, and metadata (email) comes from the Checkout Session Stripe itself created, not from unauthenticated user input at webhook time.
 
