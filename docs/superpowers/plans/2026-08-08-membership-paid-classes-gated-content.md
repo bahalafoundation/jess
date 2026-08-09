@@ -478,3 +478,494 @@ Sign up for a class with no `price_cents` set. Confirm it behaves exactly as bef
 git add src/pages/classes/[slug].astro
 git commit -m "Redirect paid class signups to Stripe Checkout"
 ```
+
+---
+
+## Chunk 3: Stripe webhook and membership grant
+
+This chunk implements the two-layer webhook architecture from the design spec: a plain Astro endpoint does raw-body Stripe signature verification (impossible inside the plugin sandbox — confirmed via docs that `SandboxedRequest` exposes no body-reading method), then hands verified data to a new plugin route that does the actual signup-recording and membership-granting.
+
+**Security note not spelled out in the spec, resolved here:** the plugin route the Astro endpoint calls into (`webhooks/confirm`) must be reachable without an EmDash session (the Astro endpoint is server-to-server, no browser cookie), which per the plugin API docs means marking it `public: true` — but a `public: true` route is callable by *anyone* on the internet, and `webhooks/confirm` itself never checks a Stripe signature (that already happened upstream). Without another layer, anyone could `curl` `webhooks/confirm` directly with a made-up email and grant themselves membership for free. This plan closes that gap with a shared secret known only to the Astro endpoint and the plugin (`INTERNAL_WEBHOOK_SECRET`), sent as a header and checked before anything else runs.
+
+### Task 5: Shared secrets and the plain Astro webhook endpoint
+
+**Files:**
+- Create: `src/pages/api/webhooks/stripe.ts`
+- Create or modify: `.dev.vars` (local Wrangler-style env file — see note below)
+- Modify: `plugins/class-signups/src/index.ts`, `plugins/class-signups/src/sandbox-entry.ts` (add the shared-secret setting)
+
+- [ ] **Step 1: Confirm how this project reads runtime env vars under the Cloudflare adapter**
+
+`astro.config.mjs` uses `adapter: cloudflare()`. On Cloudflare Workers, secrets set via `wrangler secret put` (production) or a local `.dev.vars` file (Wrangler's dev-time convention — distinct from a plain `.env` file, which Vite/Astro reads at *build* time, not *request* time) are exposed at request time as `context.locals.runtime.env`, not `import.meta.env`. This plan writes the webhook endpoint assuming that shape. Before relying on it: run the dev server, temporarily log `JSON.stringify(Object.keys(context.locals.runtime?.env ?? {}))` from a scratch endpoint, and confirm `locals.runtime.env` is actually populated in this project's setup (the `@astrojs/cloudflare` version and any `env.d.ts` type references matter here). If it isn't populated the way expected, adjust Step 3 below to whatever the confirmed mechanism is — don't ship a webhook handler that silently reads `undefined` for its secrets.
+
+- [ ] **Step 2: Add local secrets to `.dev.vars`**
+
+Create (or add to) `.dev.vars` in the project root — check `.gitignore` first to confirm it's already excluded from version control (Wrangler's convention is that `.dev.vars` is never committed; if it's not already gitignored, add it before creating the file, since it will hold real secrets):
+
+```
+STRIPE_WEBHOOK_SECRET=whsec_...
+INTERNAL_WEBHOOK_SECRET=...
+```
+
+For local development, `STRIPE_WEBHOOK_SECRET` comes from the Stripe CLI (Task 7 below prints one when you run `stripe listen`). Generate `INTERNAL_WEBHOOK_SECRET` yourself — any long random string, e.g. `openssl rand -hex 32`.
+
+- [ ] **Step 3: Write the webhook endpoint**
+
+`src/pages/api/webhooks/stripe.ts`:
+
+```typescript
+import type { APIRoute } from "astro";
+
+export const prerender = false;
+
+async function verifyStripeSignature(
+	rawBody: string,
+	sigHeader: string,
+	secret: string,
+): Promise<boolean> {
+	// Stripe's header can carry more than one `v1=` pair during secret
+	// rotation (the payload is signed with both the old and new endpoint
+	// secrets for an overlap window) — collect ALL v1 values, don't keep only
+	// the last one the way a naive Object.fromEntries over the split pairs
+	// would.
+	let timestamp: string | undefined;
+	const signatures: string[] = [];
+	for (const kv of sigHeader.split(",")) {
+		const [key, value] = kv.split("=");
+		if (key === "t") timestamp = value;
+		if (key === "v1" && value) signatures.push(value);
+	}
+	if (!timestamp || signatures.length === 0) return false;
+
+	// Reject stale signatures (Stripe's own recommended replay-attack guard).
+	const age = Math.abs(Date.now() / 1000 - Number(timestamp));
+	if (!Number.isFinite(age) || age > 300) return false;
+
+	const encoder = new TextEncoder();
+	const key = await crypto.subtle.importKey(
+		"raw",
+		encoder.encode(secret),
+		{ name: "HMAC", hash: "SHA-256" },
+		false,
+		["sign"],
+	);
+	const signedPayload = `${timestamp}.${rawBody}`;
+	const sigBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(signedPayload));
+	const expectedHex = [...new Uint8Array(sigBuffer)]
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
+
+	// Match against ANY of the provided v1 signatures, not just one.
+	return signatures.some((signature) => {
+		if (expectedHex.length !== signature.length) return false;
+		let mismatch = 0;
+		for (let i = 0; i < expectedHex.length; i++) {
+			mismatch |= expectedHex.charCodeAt(i) ^ signature.charCodeAt(i);
+		}
+		return mismatch === 0;
+	});
+}
+
+export const POST: APIRoute = async (context) => {
+	const env = context.locals.runtime?.env as
+		| { STRIPE_WEBHOOK_SECRET?: string; INTERNAL_WEBHOOK_SECRET?: string }
+		| undefined;
+	const webhookSecret = env?.STRIPE_WEBHOOK_SECRET;
+	const internalSecret = env?.INTERNAL_WEBHOOK_SECRET;
+
+	if (!webhookSecret || !internalSecret) {
+		console.error("Stripe webhook endpoint called with secrets not configured");
+		return new Response("Not configured", { status: 500 });
+	}
+
+	const signature = context.request.headers.get("stripe-signature");
+	if (!signature) {
+		return new Response("Missing signature", { status: 400 });
+	}
+
+	const rawBody = await context.request.text();
+	const valid = await verifyStripeSignature(rawBody, signature, webhookSecret);
+	if (!valid) {
+		return new Response("Invalid signature", { status: 400 });
+	}
+
+	let event: any;
+	try {
+		event = JSON.parse(rawBody);
+	} catch {
+		return new Response("Invalid payload", { status: 400 });
+	}
+
+	if (event.type !== "checkout.session.completed") {
+		return new Response(null, { status: 200 });
+	}
+
+	const session = event.data?.object ?? {};
+	const metadata = session.metadata ?? {};
+
+	const confirmRes = await fetch(
+		new URL("/_emdash/api/plugins/class-signups/webhooks/confirm", context.request.url),
+		{
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"X-EmDash-Request": "1",
+				"X-Internal-Webhook-Secret": internalSecret,
+			},
+			body: JSON.stringify({
+				stripeSessionId: session.id,
+				classId: metadata.classId,
+				name: metadata.name,
+				email: metadata.email,
+				notes: metadata.notes,
+			}),
+		},
+	);
+
+	// IMPORTANT: per this project's plugin API (see CLAUDE.md's documented
+	// quirks), a route handler that *returns* `{ success: false, error }`
+	// instead of throwing still comes back as a normal 200 wrapped in the
+	// standard `{ success: true, data: <value> }` envelope. `confirmRes.ok`
+	// alone would never catch a handler-level failure (wrong shared secret,
+	// bad metadata, missing class) — only network errors or an actual thrown
+	// Response. Unwrap the envelope and check the inner result explicitly.
+	let confirmBody: any = null;
+	try {
+		confirmBody = await confirmRes.json();
+	} catch {
+		// leave confirmBody null — treated as failure below
+	}
+	const confirmData =
+		confirmBody && typeof confirmBody === "object" && "data" in confirmBody
+			? confirmBody.data
+			: confirmBody;
+
+	if (!confirmRes.ok || !confirmData?.success) {
+		// Non-2xx (or a handler-level failure) tells Stripe to retry the webhook
+		// later — appropriate for what's likely a transient or misconfiguration
+		// failure (e.g. the shared secret drifted out of sync, or the confirm
+		// route errored).
+		console.error("class-signups webhook confirm failed", JSON.stringify(confirmBody));
+		return new Response("Confirm failed", { status: 500 });
+	}
+
+	return new Response(null, { status: 200 });
+};
+```
+
+- [ ] **Step 4: Add `internalWebhookSecret` to the plugin's Payment Settings page**
+
+**Modify** `plugins/class-signups/src/sandbox-entry.ts`'s `renderPaymentSettings()` (from Chunk 2, Task 2): add a third field to the settings form, alongside `stripeSecretKey` and `emdashInviteToken`:
+
+```typescript
+const internalWebhookSecret = (await ctx.kv.get<string>("settings:internalWebhookSecret")) ?? "";
+```
+
+```typescript
+{
+	type: "secret_input",
+	action_id: "internalWebhookSecret",
+	label: "Internal Webhook Secret",
+	initial_value: internalWebhookSecret,
+},
+```
+
+The `form_submit` handler already loops over `Object.entries(interaction.values ?? {})` generically, so no other code change is needed there — it'll pick up the new field automatically.
+
+- [ ] **Step 5: Enter matching secrets in both places**
+
+In the admin UI's Payment Settings page, enter the **same** value for "Internal Webhook Secret" that you put in `.dev.vars`'s `INTERNAL_WEBHOOK_SECRET`. These must match exactly — Task 6 will reject the request otherwise. (Yes, this means updating two places when rotating it; that's the cost of the plugin sandbox not sharing env vars with the rest of the site.)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/pages/api/webhooks/stripe.ts plugins/class-signups/src/sandbox-entry.ts .gitignore
+git commit -m "Add Stripe webhook endpoint with raw-body signature verification"
+```
+
+(Do not add `.dev.vars` itself — it holds real secrets and must stay untracked.)
+
+---
+
+### Task 6: The `webhooks/confirm` plugin route
+
+**Files:**
+- Modify: `plugins/class-signups/src/index.ts` (add a dedicated storage collection for webhook idempotency)
+- Modify: `plugins/class-signups/src/sandbox-entry.ts`
+
+- [ ] **Step 1: Add a separate storage collection for processed Stripe sessions**
+
+Don't reuse the `signups` collection to track which Stripe session IDs have already been processed — a marker record living alongside real signups would corrupt `countSignups()` (capacity checks) and the admin dashboard's per-class listing, both of which query `ctx.storage.signups` directly. Add a second, dedicated collection instead.
+
+**Modify** `plugins/class-signups/src/index.ts`:
+
+```typescript
+storage: {
+	signups: {
+		indexes: ["classId", "createdAt"],
+	},
+	processedStripeSessions: {
+		indexes: ["createdAt"],
+	},
+},
+```
+
+- [ ] **Step 2: Extend the `Signup` record shape**
+
+**Modify** `plugins/class-signups/src/sandbox-entry.ts`. Add fields to the existing `Signup` interface to track payment/oversold state:
+
+```typescript
+interface Signup {
+	classId: string;
+	className: string;
+	name: string;
+	email: string;
+	notes?: string;
+	createdAt: string;
+	stripeSessionId?: string;
+	paid?: boolean;
+	oversold?: boolean;
+}
+```
+
+- [ ] **Step 3: Implement the `webhooks/confirm` route**
+
+Add a small constant-time string comparison helper near the top of the file, alongside `EMAIL_RE`/`fail` — used for the shared-secret check below (matching the same constant-time-comparison approach already used for the Stripe HMAC check in `src/pages/api/webhooks/stripe.ts`, for consistency rather than because the threat model strictly demands it here):
+
+```typescript
+function timingSafeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	let mismatch = 0;
+	for (let i = 0; i < a.length; i++) {
+		mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	}
+	return mismatch === 0;
+}
+```
+
+Add a new route to the `routes` object, alongside `signup`/`availability`/`admin`. It must be `public: true` (no session available, called server-to-server), but is protected by the shared secret from Task 5:
+
+```typescript
+"webhooks/confirm": {
+	public: true,
+	handler: async (routeCtx: any, ctx: PluginContext) => {
+		if (routeCtx.request.method !== "POST") {
+			return fail("Method not allowed.");
+		}
+
+		const sharedSecret = await ctx.kv.get<string>("settings:internalWebhookSecret");
+		const providedSecret = routeCtx.request.headers["x-internal-webhook-secret"] ?? "";
+		if (!sharedSecret || !timingSafeEqual(providedSecret, sharedSecret)) {
+			ctx.log.error("webhooks/confirm called with missing or wrong internal secret");
+			return fail("Unauthorized.");
+		}
+
+		const input = (routeCtx.input ?? {}) as Record<string, unknown>;
+		const stripeSessionId =
+			typeof input.stripeSessionId === "string" ? input.stripeSessionId.trim() : "";
+		const classId = typeof input.classId === "string" ? input.classId.trim() : "";
+		const name = typeof input.name === "string" ? input.name.trim() : "";
+		const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+		const notes = typeof input.notes === "string" ? input.notes.trim().slice(0, 1000) : "";
+
+		if (!stripeSessionId || !classId || !EMAIL_RE.test(email)) {
+			ctx.log.error("webhooks/confirm called with invalid payload", { classId, email });
+			return fail("Invalid payload.");
+		}
+
+		// Idempotency: Stripe may redeliver the same event, and can even deliver
+		// duplicates concurrently. Check-then-claim as early as possible — before
+		// recording the signup or touching membership — to keep the race window
+		// (two concurrent requests both passing the `exists()` check before
+		// either `put()`s the claim) as narrow as practical. `ctx.storage`
+		// doesn't document an atomic compare-and-swap primitive, so this can't
+		// be made fully race-proof; the residual risk is a duplicate invite call
+		// on the rare true-concurrent redelivery, which is harmless (EmDash's
+		// invite endpoint no-ops or errors harmlessly for an email that's
+		// already invited) — not the capacity-oversell race, which is a
+		// separate, already-acknowledged limitation.
+		if (await ctx.storage.processedStripeSessions.exists(stripeSessionId)) {
+			return { success: true, alreadyProcessed: true };
+		}
+		await ctx.storage.processedStripeSessions.put(stripeSessionId, {
+			classId,
+			email,
+			createdAt: new Date().toISOString(),
+		});
+
+		const cls = await getClass(ctx, classId);
+		if (!cls) {
+			ctx.log.error("webhooks/confirm: class not found", { classId });
+			return fail("Class not found.");
+		}
+
+		const id = signupId(cls.id, email);
+		const alreadySignedUp = await ctx.storage.signups.exists(id);
+
+		if (!alreadySignedUp) {
+			const taken = await countSignups(ctx, cls.id);
+			const oversold = taken >= cls.capacity;
+			if (oversold) {
+				ctx.log.error("Paid signup recorded past capacity — needs manual resolution", {
+					classId: cls.id,
+					email,
+				});
+			}
+
+			const record: Signup = {
+				classId: cls.id,
+				className: cls.title,
+				name,
+				email,
+				notes: notes || undefined,
+				createdAt: new Date().toISOString(),
+				stripeSessionId,
+				paid: true,
+				oversold: oversold || undefined,
+			};
+			await ctx.storage.signups.put(id, record);
+		}
+
+		// Grant membership if this email has no EmDash user yet.
+		if (ctx.users && ctx.http) {
+			try {
+				const existingUser = await ctx.users.getByEmail(email);
+				if (!existingUser) {
+					const inviteToken = await ctx.kv.get<string>("settings:emdashInviteToken");
+					if (!inviteToken) {
+						ctx.log.error("No invite token configured — cannot auto-invite paying member", {
+							email,
+						});
+					} else {
+						const inviteRes = await ctx.http.fetch(ctx.url("/_emdash/api/auth/invite"), {
+							method: "POST",
+							headers: {
+								Authorization: `Bearer ${inviteToken}`,
+								"Content-Type": "application/json",
+							},
+							body: JSON.stringify({ email, role: 10 }),
+						});
+						if (!inviteRes.ok) {
+							ctx.log.error("EmDash invite call failed", {
+								email,
+								status: inviteRes.status,
+								body: await inviteRes.text().catch(() => ""),
+							});
+						}
+					}
+				}
+			} catch (err) {
+				ctx.log.error("Membership invite check/call threw", { email, error: String(err) });
+			}
+		}
+
+		return { success: true };
+	},
+},
+```
+
+Note the invite failure path only logs — per the design spec, a failed invite doesn't fail the whole webhook (the payment and signup record are already durable at that point); Jess can invite the payer manually from **Settings → Users** as a fallback, which is why Task 7 includes a check that this failure path is visible somewhere, not just swallowed into a log line nobody reads.
+
+- [ ] **Step 4: Surface paid/oversold state on the admin dashboard**
+
+**Modify** `renderSignupsDashboard()` (the function Chunk 2 Task 2 extracted from the old inline `admin` handler). In the per-signup table row mapping, add a "Paid" column, and add a warning block per class group when any signup in it is `oversold`:
+
+```typescript
+columns: [
+	{ key: "name", label: "Name" },
+	{ key: "email", label: "Email" },
+	{ key: "paid", label: "Paid" },
+	{ key: "notes", label: "Notes" },
+	{ key: "createdAt", label: "Signed up" },
+],
+rows: group.signups.map((s) => ({
+	name: s.name,
+	email: s.email,
+	paid: s.paid ? "Yes" : "—",
+	notes: s.notes ?? "",
+	createdAt: new Date(s.createdAt).toLocaleString("en-US", {
+		dateStyle: "medium",
+		timeStyle: "short",
+	}),
+})),
+```
+
+Before the `table` block, add:
+
+```typescript
+if (group.signups.some((s) => s.oversold)) {
+	blocks.push({
+		type: "section",
+		text: "⚠️ One or more paid signups for this class were recorded past capacity. Resolve manually (refund or accept the overage) — see the design spec's overselling note.",
+	});
+}
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add plugins/class-signups
+git commit -m "Add webhooks/confirm route: idempotent signup recording and membership grant"
+```
+
+---
+
+### Task 7: End-to-end verification with the Stripe CLI
+
+**Files:** none (verification only)
+
+- [ ] **Step 1: Install and authenticate the Stripe CLI**
+
+If not already available: follow Stripe's CLI install instructions for the local OS, then run `stripe login` and complete the browser auth flow.
+
+- [ ] **Step 2: Forward webhooks to the local dev server**
+
+Run (in a separate terminal, left running):
+```bash
+stripe listen --forward-to localhost:4321/api/webhooks/stripe
+```
+Expected: prints a webhook signing secret (`whsec_...`). Copy it into `.dev.vars` as `STRIPE_WEBHOOK_SECRET`, then restart `npx emdash dev` so the new value is picked up.
+
+- [ ] **Step 3: Complete a real test payment**
+
+With the dev server running, sign up for a paid test class through the actual UI (as in Chunk 2 Task 4 Step 4) using Stripe's test card `4242 4242 4242 4242`. Watch the `stripe listen` terminal for a `checkout.session.completed` event, and the dev server log (`.astro/dev.log`) for the webhook endpoint and `webhooks/confirm` route firing.
+
+- [ ] **Step 4: Verify the signup was recorded**
+
+In the admin UI, open **Class Signups** and confirm the new signup appears with "Paid: Yes".
+
+- [ ] **Step 5: Verify membership was granted**
+
+Check **Settings → Users** (or wherever user management lives) for a new user with the test email and Subscriber role, in an "invited" or "pending" state. If email is configured for this dev environment, check that an invite email was sent (or check the plugin/dev logs for the invite call's response).
+
+- [ ] **Step 6: Verify idempotency**
+
+Run:
+```bash
+stripe events resend <event-id>
+```
+(the event ID is printed by `stripe listen` for the event from Step 3). Confirm in the admin UI that no duplicate signup was created, and check `.astro/dev.log` for the `alreadyProcessed: true` short-circuit rather than a second invite attempt.
+
+- [ ] **Step 7: Verify the unauthorized-caller path is actually blocked**
+
+This is the security property Task 5/6 exist for — confirm it directly, don't just trust the code:
+```bash
+curl -X POST http://localhost:4321/_emdash/api/plugins/class-signups/webhooks/confirm \
+  -H "Content-Type: application/json" \
+  -H "X-EmDash-Request: 1" \
+  -d '{"stripeSessionId":"fake","classId":"whatever","email":"attacker@example.com","name":"Attacker"}'
+```
+Expected: a failure response (missing/wrong internal secret), and no user created for `attacker@example.com`. This confirms the route can't be used to grant free membership by calling it directly.
+
+- [ ] **Step 8: Verify a desynced shared secret is actually reported as a failure, not silently swallowed**
+
+This exercises the fix for the envelope-unwrapping bug caught in review: a route handler that returns `{ success: false }` instead of throwing still comes back as a normal HTTP 200 from EmDash's plugin dispatcher, so `src/pages/api/webhooks/stripe.ts` must unwrap the response body and check the inner `success` field, not just `res.ok`.
+
+Temporarily change the "Internal Webhook Secret" value in the plugin's Payment Settings page to something different from what's in `.dev.vars` (don't change `.dev.vars` itself). Trigger another real test payment (or `stripe events resend` a fresh one). Confirm:
+- The `stripe listen` terminal shows the delivery to `/api/webhooks/stripe` getting a **500** response (meaning Stripe will retry it) — not a 200.
+- `.astro/dev.log` shows the "webhook confirm failed" log line with the unauthorized/wrong-secret error inside it.
+- No new signup or invite happened for this attempt.
+
+Then restore the matching secret value and re-trigger to confirm it succeeds normally, restoring the passing state from Step 3-6 before moving on.
+
+- [ ] **Step 9: No commit needed for Steps 1-8** — they're verification only. If any step surfaced a bug, it should already have been fixed and committed in Task 5/6 before reaching this point.
