@@ -969,3 +969,607 @@ Temporarily change the "Internal Webhook Secret" value in the plugin's Payment S
 Then restore the matching secret value and re-trigger to confirm it succeeds normally, restoring the passing state from Step 3-6 before moving on.
 
 - [ ] **Step 9: No commit needed for Steps 1-8** — they're verification only. If any step surfaced a bug, it should already have been fixed and committed in Task 5/6 before reaching this point.
+
+---
+
+## Chunk 4: Gated content and member login
+
+This chunk has two genuinely unconfirmed pieces the design spec flagged and this plan cannot resolve without live access to a running EmDash instance: the exact request/response shape of the passkey REST endpoints, and where EmDash's magic-link verify redirects afterward. Both are called out explicitly below with a live-verification step before the surrounding code is trusted — don't skip those steps.
+
+### Task 8: A shared "current session" helper
+
+**Files:**
+- Create: `src/lib/session.ts`
+
+There's no confirmed public API for reading the current visitor's session/role from arbitrary site page code (EmDash's own admin shell middleware does this internally via a `getSession()` that isn't confirmed as a public export). The one confirmed, documented way to check "who is this request authenticated as" from any server context is the REST endpoint `GET /_emdash/api/auth/me`. This helper wraps that as a same-origin server-to-server call, forwarding the visitor's cookies.
+
+- [ ] **Step 1: Check for a more direct API before using the HTTP fallback**
+
+Before writing the fallback below, spend a few minutes checking whether `emdash` exports something more direct for site (not just admin) pages — search the docs MCP for "getSession export public locals.user site pages" and skim `node_modules/emdash`'s type declarations (installed by now, from earlier chunks) for any exported session-reading function. If one exists, use it instead of the HTTP round-trip below — it'll be faster and avoids the cookie-forwarding edge cases noted in Step 3. If nothing turns up, proceed with the fallback.
+
+- [ ] **Step 2: Write the helper**
+
+`src/lib/session.ts`:
+
+```typescript
+export interface CurrentUser {
+	id: string;
+	email: string;
+	role: number;
+}
+
+const SUBSCRIBER_ROLE = 10;
+
+export async function getCurrentUser(request: Request): Promise<CurrentUser | null> {
+	const cookie = request.headers.get("cookie");
+	if (!cookie) return null;
+
+	try {
+		const res = await fetch(new URL("/_emdash/api/auth/me", request.url), {
+			headers: { cookie },
+		});
+		if (!res.ok) return null;
+
+		const body = await res.json();
+		const data = body && typeof body === "object" && "data" in body ? body.data : body;
+		if (!data || typeof data !== "object" || typeof data.role !== "number") return null;
+
+		return { id: String(data.id ?? ""), email: String(data.email ?? ""), role: data.role };
+	} catch {
+		return null;
+	}
+}
+
+export function isMember(user: CurrentUser | null): boolean {
+	return user !== null && user.role >= SUBSCRIBER_ROLE;
+}
+```
+
+**Note:** this assumes `/api/auth/me`'s response includes a numeric `role` field directly on the user object (matching the role-level numbers documented in the authentication guide — Subscriber = 10). Confirm this against a real response in Task 9's verification (log in as any user locally and hit this endpoint directly) before trusting the `isMember()` check in production — if the field is named differently or nested, fix it here.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/lib/session.ts
+git commit -m "Add shared session-check helper for gated pages"
+```
+
+---
+
+### Task 9: Gated `dispatches` pages
+
+**Files:**
+- Create: `src/pages/dispatches/index.astro`
+- Create: `src/pages/dispatches/[slug].astro`
+
+- [ ] **Step 1: Write the index page**
+
+`src/pages/dispatches/index.astro` — public teaser list, modeled on the structure of `src/pages/work/index.astro`/`classes/index.astro` (read one of those first for the established grid/heading pattern and token usage before writing this):
+
+```astro
+---
+import { getEmDashCollection } from "emdash";
+import { Image } from "emdash/ui";
+import Base from "../../layouts/Base.astro";
+
+const { entries: dispatches, error, cacheHint } = await getEmDashCollection("dispatches");
+
+if (error) {
+	console.error("Failed to load dispatches:", error);
+}
+
+if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
+
+const sorted = [...(dispatches ?? [])].sort((a, b) => {
+	const at = a.data.published_at ? new Date(String(a.data.published_at)).getTime() : 0;
+	const bt = b.data.published_at ? new Date(String(b.data.published_at)).getTime() : 0;
+	return bt - at;
+});
+---
+
+<Base title="Dispatches" description="Members-only essays, recordings, and resources.">
+	<div class="dispatches-page">
+		<header class="dispatches-header">
+			<h1 class="dispatches-title">Dispatches</h1>
+			<p class="dispatches-intro">
+				Longer, members-only writing. Full dispatches unlock the moment you pay
+				for any class — see <a href="/classes">upcoming classes</a>. Already a
+				member? <a href="/members/login">Log in</a>.
+			</p>
+		</header>
+
+		<div class="dispatches-grid">
+			{
+				sorted.map((entry) => (
+					<article class="dispatch-card">
+						{entry.data.featured_image && (
+							<div class="dispatch-card-image">
+								<Image image={entry.data.featured_image} />
+							</div>
+						)}
+						<h2 class="dispatch-card-title">
+							<a href={`/dispatches/${entry.id}`}>{entry.data.title}</a>
+						</h2>
+						{entry.data.summary && <p class="dispatch-card-summary">{entry.data.summary}</p>}
+					</article>
+				))
+			}
+		</div>
+	</div>
+</Base>
+
+<style>
+	.dispatches-page {
+		max-width: var(--wide-width);
+		margin: 0 auto;
+		padding: var(--spacing-2xl) var(--spacing-lg) var(--spacing-4xl);
+	}
+
+	.dispatches-header {
+		max-width: var(--max-width);
+		margin-bottom: var(--spacing-3xl);
+	}
+
+	.dispatches-title {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-4xl);
+		font-weight: var(--font-weight-display);
+		line-height: var(--leading-tight);
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.dispatches-intro {
+		font-size: var(--font-size-lg);
+		color: var(--color-muted);
+		line-height: var(--leading-normal);
+	}
+
+	.dispatches-intro a {
+		color: var(--color-text);
+	}
+
+	.dispatches-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: var(--spacing-2xl);
+	}
+
+	.dispatch-card-image img {
+		width: 100%;
+		height: auto;
+		border-radius: var(--radius);
+		margin-bottom: var(--spacing-md);
+	}
+
+	.dispatch-card-title {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-xl);
+		font-weight: var(--font-weight-heading);
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.dispatch-card-title a {
+		color: var(--color-text);
+		text-decoration: none;
+	}
+
+	.dispatch-card-title a:hover {
+		color: var(--color-brand);
+	}
+
+	.dispatch-card-summary {
+		color: var(--color-muted);
+		font-size: var(--font-size-base);
+		line-height: var(--leading-normal);
+	}
+</style>
+```
+
+Before writing this, actually read `src/pages/work/index.astro` (or `classes/index.astro`) to confirm the real grid-layout token names and adjust the style block to match established conventions exactly rather than trusting the guesses above verbatim.
+
+- [ ] **Step 2: Write the gated detail page**
+
+`src/pages/dispatches/[slug].astro`. This is the security-critical page: the full `content` field must never be included in the rendered HTML for a non-member request — not fetched-then-hidden with CSS, actually not present in the response.
+
+```astro
+---
+import { getEmDashEntry, decodeSlug } from "emdash";
+import { Image, PortableText } from "emdash/ui";
+import Base from "../../layouts/Base.astro";
+import { getCurrentUser, isMember } from "../../lib/session";
+
+const slug = decodeSlug(Astro.params.slug);
+
+if (!slug) {
+	return Astro.redirect("/404");
+}
+
+const { entry, cacheHint } = await getEmDashEntry("dispatches", slug);
+
+if (!entry) {
+	return Astro.redirect("/404");
+}
+
+if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
+
+const user = await getCurrentUser(Astro.request);
+const member = isMember(user);
+
+function getImageSrc(img: unknown): string | undefined {
+	if (!img || typeof img !== "object") return undefined;
+	const image = img as Record<string, unknown>;
+	return typeof image.src === "string" ? image.src : undefined;
+}
+---
+
+<Base
+	title={entry.data.title}
+	description={entry.data.summary}
+	image={getImageSrc(entry.data.featured_image)}
+>
+	<article class="dispatch-page">
+		<h1 class="dispatch-title">{entry.data.title}</h1>
+
+		{
+			entry.data.featured_image && (
+				<div class="featured-image">
+					<Image image={entry.data.featured_image} />
+				</div>
+			)
+		}
+
+		{entry.data.summary && <p class="dispatch-summary">{entry.data.summary}</p>}
+
+		{
+			member ? (
+				entry.data.content && (
+					<div class="dispatch-content">
+						<PortableText value={entry.data.content} />
+					</div>
+				)
+			) : (
+				<div class="member-gate">
+					<h2>This dispatch is for members</h2>
+					<p>
+						Full dispatches unlock the moment you pay for any class.{" "}
+						<a href="/classes">See upcoming classes</a>, or if you're already a
+						member, <a href="/members/login">log in</a>.
+					</p>
+				</div>
+			)
+		}
+	</article>
+</Base>
+
+<style>
+	.dispatch-page {
+		max-width: var(--max-width);
+		margin: 0 auto;
+		padding: var(--spacing-2xl) var(--spacing-lg) var(--spacing-4xl);
+	}
+
+	.dispatch-title {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-4xl);
+		font-weight: var(--font-weight-display);
+		line-height: var(--leading-tight);
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.featured-image {
+		margin-bottom: var(--spacing-2xl);
+	}
+
+	.featured-image img {
+		width: 100%;
+		height: auto;
+		border-radius: var(--radius);
+	}
+
+	.dispatch-summary {
+		font-size: var(--font-size-lg);
+		color: var(--color-muted);
+		line-height: var(--leading-normal);
+		margin-bottom: var(--spacing-2xl);
+	}
+
+	.dispatch-content {
+		font-size: var(--font-size-base);
+		line-height: var(--leading-relaxed);
+	}
+
+	.dispatch-content :global(p) {
+		margin-bottom: 1.5em;
+	}
+
+	.member-gate {
+		padding: var(--spacing-2xl);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+	}
+
+	.member-gate h2 {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-xl);
+		font-weight: var(--font-weight-heading);
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.member-gate p {
+		color: var(--color-muted);
+	}
+
+	.member-gate a {
+		color: var(--color-text);
+	}
+</style>
+```
+
+- [ ] **Step 3: Verify the gate is real, not just visual**
+
+Run: `npx emdash dev`. Create a test `dispatches` entry with distinctive placeholder text in `content` (something greppable, e.g. `"MEMBERS-ONLY-MARKER-TEXT"`), publish it. As a logged-out browser (or `curl http://localhost:4321/dispatches/<slug>` with no cookies), fetch the page and confirm the marker text does **not** appear anywhere in the raw HTML response — not commented out, not in a hidden `<div>`, entirely absent. This is the one check in this whole plan that most directly protects against actually leaking paid content, so don't skip it or eyeball it in a browser only (view-source or curl, to see exactly what the server sent).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/pages/dispatches
+git commit -m "Add gated dispatches content pages"
+```
+
+---
+
+### Task 10: `/members/login` page
+
+**Files:**
+- Create: `src/pages/members/login.astro`
+- Modify: `package.json` (new dependency)
+
+- [ ] **Step 1: Confirm the passkey REST payload shapes before wiring the client**
+
+The REST API reference confirms these endpoints exist (`POST /_emdash/api/auth/passkey/options`, `POST /_emdash/api/auth/passkey/verify`, `POST /_emdash/api/auth/magic-link/send`, `GET /_emdash/api/auth/magic-link/verify`) but not their exact request/response bodies. WebAuthn's challenge/credential encoding is fiddly and easy to get subtly wrong by hand, so this plan uses `@simplewebauthn/browser` (a small, standard client library most WebAuthn server implementations are designed to pair with) rather than hand-rolling base64url/ArrayBuffer conversions — but that only works if EmDash's `options` response is shaped as a standard `PublicKeyCredentialRequestOptionsJSON` (the shape `@simplewebauthn/server` emits, which is a very common server-side counterpart). Before writing Step 3, call the endpoint directly and inspect the shape:
+
+```bash
+curl -X POST http://localhost:4321/_emdash/api/auth/passkey/options -H "Content-Type: application/json" -d '{}'
+```
+
+If the response matches `@simplewebauthn`'s expected shape (an object with `challenge`, `rpId`, `allowCredentials`, etc. as base64url strings), proceed with Step 3 as written. If it doesn't, adjust Step 3 to hand-construct the request instead — don't force a mismatched library onto a differently-shaped API.
+
+- [ ] **Step 2: Add the WebAuthn client library**
+
+Run: `pnpm add @simplewebauthn/browser`
+Expected: adds one small dependency to `package.json`/`pnpm-lock.yaml`.
+
+- [ ] **Step 3: Write the login page**
+
+`src/pages/members/login.astro`:
+
+```astro
+---
+import Base from "../../layouts/Base.astro";
+---
+
+<Base title="Member Login" description="Log in to read member-only content.">
+	<div class="login-page">
+		<h1 class="login-title">Member Login</h1>
+
+		<button type="button" data-passkey-login class="login-button">
+			Log in with a passkey
+		</button>
+		<p class="login-error" data-passkey-error hidden></p>
+
+		<div class="login-divider"><span>or</span></div>
+
+		<form data-magic-link-form>
+			<div class="form-field">
+				<label for="magic-link-email">Email</label>
+				<input
+					type="email"
+					id="magic-link-email"
+					name="email"
+					required
+					placeholder="you@example.com"
+					autocomplete="email"
+				/>
+			</div>
+			<button type="submit" class="login-button" data-magic-link-submit>
+				Email me a login link
+			</button>
+			<p class="login-message" data-magic-link-message hidden></p>
+		</form>
+	</div>
+</Base>
+
+<script>
+	import { startAuthentication } from "@simplewebauthn/browser";
+
+	const unwrap = (payload: unknown): any => {
+		if (payload && typeof payload === "object" && "data" in payload) {
+			return (payload as { data: unknown }).data;
+		}
+		return payload;
+	};
+
+	const passkeyButton = document.querySelector<HTMLButtonElement>("[data-passkey-login]");
+	const passkeyError = document.querySelector<HTMLElement>("[data-passkey-error]")!;
+
+	passkeyButton?.addEventListener("click", async () => {
+		passkeyError.hidden = true;
+		try {
+			const optionsRes = await fetch("/_emdash/api/auth/passkey/options", {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-EmDash-Request": "1" },
+				body: JSON.stringify({}),
+			});
+			const options = unwrap(await optionsRes.json());
+			if (!optionsRes.ok || !options) {
+				throw new Error("Could not start passkey login.");
+			}
+
+			const credential = await startAuthentication({ optionsJSON: options });
+
+			const verifyRes = await fetch("/_emdash/api/auth/passkey/verify", {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-EmDash-Request": "1" },
+				body: JSON.stringify(credential),
+			});
+			const result = unwrap(await verifyRes.json());
+
+			if (verifyRes.ok && result?.success !== false) {
+				window.location.href = "/dispatches";
+			} else {
+				throw new Error(result?.error ?? "Passkey login failed.");
+			}
+		} catch (err) {
+			passkeyError.textContent =
+				err instanceof Error ? err.message : "Passkey login failed. Try the email link instead.";
+			passkeyError.hidden = false;
+		}
+	});
+
+	const magicLinkForm = document.querySelector<HTMLFormElement>("[data-magic-link-form]");
+	const magicLinkMessage = document.querySelector<HTMLElement>("[data-magic-link-message]")!;
+
+	magicLinkForm?.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		const submitButton = magicLinkForm.querySelector<HTMLButtonElement>("[data-magic-link-submit]")!;
+		const email = new FormData(magicLinkForm).get("email");
+
+		submitButton.disabled = true;
+		try {
+			const res = await fetch("/_emdash/api/auth/magic-link/send", {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-EmDash-Request": "1" },
+				body: JSON.stringify({ email }),
+			});
+			const data = unwrap(await res.json());
+			magicLinkMessage.textContent =
+				res.ok && data?.success !== false
+					? "Check your email for a login link."
+					: (data?.error ?? "Something went wrong. Please try again.");
+			magicLinkMessage.hidden = false;
+		} catch {
+			magicLinkMessage.textContent = "Something went wrong. Please try again.";
+			magicLinkMessage.hidden = false;
+		} finally {
+			submitButton.disabled = false;
+		}
+	});
+</script>
+
+<style>
+	.login-page {
+		max-width: 400px;
+		margin: 0 auto;
+		padding: var(--spacing-3xl) var(--spacing-lg);
+	}
+
+	.login-title {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-3xl);
+		font-weight: var(--font-weight-display);
+		margin-bottom: var(--spacing-2xl);
+		text-align: center;
+	}
+
+	.login-button {
+		width: 100%;
+		padding: var(--spacing-md) var(--spacing-xl);
+		font-family: inherit;
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		color: var(--color-bg);
+		background: var(--color-text);
+		border: none;
+		border-radius: var(--radius);
+		cursor: pointer;
+	}
+
+	.login-button:hover:not(:disabled) {
+		background: var(--color-brand);
+		color: var(--color-on-brand);
+	}
+
+	.login-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.login-divider {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-md);
+		margin: var(--spacing-xl) 0;
+		color: var(--color-muted);
+		font-size: var(--font-size-sm);
+	}
+
+	.login-divider::before,
+	.login-divider::after {
+		content: "";
+		flex: 1;
+		height: 1px;
+		background: var(--color-border);
+	}
+
+	.form-field {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm);
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.form-field label {
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+	}
+
+	.form-field input {
+		padding: var(--spacing-md);
+		font-family: inherit;
+		font-size: var(--font-size-base);
+		color: var(--color-text);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+	}
+
+	.login-error {
+		margin-top: var(--spacing-sm);
+		color: var(--color-danger);
+		font-size: var(--font-size-sm);
+	}
+
+	.login-message {
+		margin-top: var(--spacing-sm);
+		color: var(--color-muted);
+		font-size: var(--font-size-sm);
+	}
+</style>
+```
+
+- [ ] **Step 4: Verify passkey login end-to-end**
+
+Using a test Subscriber account created via the invite flow from Chunk 3's Task 7 verification (which should have a passkey registered by now, from accepting the invite email), visit `http://localhost:4321/members/login` and click "Log in with a passkey." Confirm the browser's platform passkey prompt appears, completing it redirects to `/dispatches`, and that the previously-gated dispatch from Task 9 Step 3 now shows its full content (re-run the raw-HTML check from that step, this time confirming the marker text **is** present).
+
+- [ ] **Step 5: Verify magic-link request (and flag the redirect-destination gap)**
+
+Submit the magic-link form with the test member's email. Confirm the "check your email" message appears, and (if email is configured for this dev environment) that an email actually arrives. Click the link and confirm it logs the browser in — but note where it lands: EmDash's magic-link verify endpoint controls the post-login redirect, and this plan doesn't know whether that's configurable per-request. If it lands somewhere unhelpful (e.g. `/_emdash/admin`, which a Subscriber can't do much with), that's a known, acceptable rough edge for this plan — the member is still logged in and can navigate to `/dispatches` manually. Note it for a possible follow-up rather than blocking on it here.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/pages/members package.json pnpm-lock.yaml
+git commit -m "Add member login page with passkey and magic-link authentication"
+```
+
+---
+
+## Handoff
+
+All four chunks are implemented and manually verified end-to-end: schema changes, Stripe-backed paid class signups, webhook-driven permanent membership via EmDash's own Subscriber role, and gated dispatches content. Two rough edges are explicitly flagged rather than silently accepted:
+
+1. **Oversold paid signups** surface on the admin dashboard for manual resolution (refund or capacity exception) — there's no automated refund flow by design.
+2. **Magic-link post-login redirect destination** is controlled by EmDash itself and wasn't confirmed to be configurable — a returning member using the magic-link path (rather than a passkey) may land somewhere other than `/dispatches` after logging in.
+
+Before this goes live for real: set `STRIPE_SECRET_KEY` to a **live** (not test) key in the plugin's Payment Settings, set `STRIPE_WEBHOOK_SECRET`/`INTERNAL_WEBHOOK_SECRET` in the real deployment's secret store (not `.dev.vars`, which is dev-only), and register the production webhook endpoint URL in the Stripe dashboard pointing at `/api/webhooks/stripe` on the real domain.
