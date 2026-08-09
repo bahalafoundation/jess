@@ -120,6 +120,11 @@
 					"slug": "price",
 					"label": "Price",
 					"type": "string"
+				},
+				{
+					"slug": "price_cents",
+					"label": "Price (cents, for billing)",
+					"type": "integer"
 				}
 			]
 		},
@@ -141,6 +146,43 @@
 					"label": "Content",
 					"type": "portableText",
 					"searchable": true
+				}
+			]
+		},
+		{
+			"slug": "dispatches",
+			"label": "Dispatches",
+			"labelSingular": "Dispatch",
+			"supports": ["drafts", "revisions", "search", "seo"],
+			"fields": [
+				{
+					"slug": "title",
+					"label": "Title",
+					"type": "string",
+					"required": true,
+					"searchable": true
+				},
+				{
+					"slug": "featured_image",
+					"label": "Featured Image",
+					"type": "image"
+				},
+				{
+					"slug": "summary",
+					"label": "Summary",
+					"type": "text",
+					"searchable": true
+				},
+				{
+					"slug": "content",
+					"label": "Content",
+					"type": "portableText",
+					"searchable": true
+				},
+				{
+					"slug": "published_on",
+					"label": "Published",
+					"type": "datetime"
 				}
 			]
 		}
