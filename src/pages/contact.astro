@@ -129,10 +129,85 @@ if (Astro.request.method === "POST") {
 						</li>
 					</ul>
 				</div>
+
+				<div class="info-section">
+					<h3>Newsletter</h3>
+					<form method="post" data-newsletter-form>
+						<div class="newsletter-row">
+							<input
+								type="email"
+								name="email"
+								required
+								placeholder="you@example.com"
+								aria-label="Email address"
+								data-newsletter-input
+							/>
+							<button type="submit" data-newsletter-submit>Subscribe</button>
+						</div>
+						<p class="newsletter-message" data-newsletter-message hidden></p>
+					</form>
+				</div>
 			</aside>
 		</div>
 	</div>
 </Base>
+
+<script>
+	const form = document.querySelector<HTMLFormElement>("[data-newsletter-form]");
+
+	if (form) {
+		const input = form.querySelector<HTMLInputElement>("[data-newsletter-input]")!;
+		const submitButton = form.querySelector<HTMLButtonElement>("[data-newsletter-submit]")!;
+		const message = form.querySelector<HTMLElement>("[data-newsletter-message]")!;
+
+		const unwrap = (payload: unknown): any => {
+			if (payload && typeof payload === "object" && "data" in payload) {
+				return (payload as { data: unknown }).data;
+			}
+			return payload;
+		};
+
+		form.addEventListener("submit", async (event) => {
+			event.preventDefault();
+			submitButton.disabled = true;
+			submitButton.textContent = "Subscribing…";
+			message.hidden = true;
+
+			try {
+				const res = await fetch("/_emdash/api/plugins/newsletter/subscribe", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-EmDash-Request": "1",
+					},
+					body: JSON.stringify({ email: input.value }),
+				});
+				const data = unwrap(await res.json());
+
+				if (res.ok && data?.success) {
+					message.textContent = data.alreadySubscribed
+						? "You're already on the list."
+						: "You're subscribed.";
+					message.classList.remove("newsletter-error");
+					message.hidden = false;
+					form.reset();
+				} else {
+					message.textContent =
+						typeof data?.error === "string" ? data.error : "Something went wrong. Please try again.";
+					message.classList.add("newsletter-error");
+					message.hidden = false;
+				}
+			} catch {
+				message.textContent = "Something went wrong. Please try again.";
+				message.classList.add("newsletter-error");
+				message.hidden = false;
+			} finally {
+				submitButton.disabled = false;
+				submitButton.textContent = "Subscribe";
+			}
+		});
+	}
+</script>
 
 <style>
 	.contact-page {
@@ -350,5 +425,61 @@ if (Astro.request.method === "POST") {
 		.contact-info {
 			grid-template-columns: 1fr;
 		}
+	}
+
+	.newsletter-row {
+		display: flex;
+		gap: var(--spacing-sm);
+	}
+
+	.newsletter-row input {
+		flex: 1;
+		min-width: 0;
+		padding: var(--spacing-sm) var(--spacing-md);
+		font-family: inherit;
+		font-size: var(--font-size-sm);
+		color: var(--color-text);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+	}
+
+	.newsletter-row input:focus {
+		outline: none;
+		border-color: var(--color-brand);
+		box-shadow: 0 0 0 3px var(--color-brand-ring);
+	}
+
+	.newsletter-row button {
+		padding: var(--spacing-sm) var(--spacing-md);
+		font-family: inherit;
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		color: var(--color-bg);
+		background: var(--color-text);
+		border: none;
+		border-radius: var(--radius);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.newsletter-row button:hover:not(:disabled) {
+		background: var(--color-brand);
+		color: var(--color-on-brand);
+	}
+
+	.newsletter-row button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.newsletter-message {
+		margin-top: var(--spacing-sm);
+		font-size: var(--font-size-sm);
+		color: var(--color-muted);
+	}
+
+	.newsletter-message.newsletter-error {
+		color: var(--color-danger);
 	}
 </style>
