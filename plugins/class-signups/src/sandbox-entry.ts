@@ -14,6 +14,7 @@ interface ClassInfo {
 	title: string;
 	startTime: Date | null;
 	capacity: number;
+	priceCents: number;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -43,12 +44,14 @@ async function getClass(ctx: PluginContext, classId: string): Promise<ClassInfo 
 	if (!entry) return null;
 	const data = entry.data && typeof entry.data === "object" ? entry.data : entry;
 	const capacity = Number(data.capacity);
+	const priceCents = Number(data.price_cents);
 	const start = data.start_time ? new Date(data.start_time) : null;
 	return {
 		id: String(entry.id ?? classId),
 		title: String(data.title ?? "Untitled class"),
 		startTime: start && !Number.isNaN(start.getTime()) ? start : null,
 		capacity: Number.isFinite(capacity) && capacity > 0 ? capacity : Infinity,
+		priceCents: Number.isFinite(priceCents) && priceCents > 0 ? priceCents : 0,
 	};
 }
 
@@ -203,10 +206,12 @@ export default {
 				const name = typeof input.name === "string" ? input.name.trim() : "";
 				const email = typeof input.email === "string" ? input.email.trim() : "";
 				const notes = typeof input.notes === "string" ? input.notes.trim().slice(0, 1000) : "";
+				const classUrl = typeof input.classUrl === "string" ? input.classUrl.trim() : "";
 
 				if (!classId) return fail("Missing classId.");
 				if (!name || name.length > 200) return fail("Please provide your name.");
 				if (!EMAIL_RE.test(email)) return fail("Please provide a valid email address.");
+				if (!classUrl) return fail("Missing classUrl.");
 
 				const cls = await getClass(ctx, classId);
 				if (!cls) return fail("Class not found.");
@@ -223,6 +228,60 @@ export default {
 				const taken = await countSignups(ctx, cls.id);
 				if (taken >= cls.capacity) {
 					return { success: false, full: true, error: "This class is full." };
+				}
+
+				if (cls.priceCents > 0) {
+					const stripeSecretKey = await ctx.kv.get<string>("settings:stripeSecretKey");
+					if (!stripeSecretKey || !ctx.http) {
+						ctx.log.error("Paid class signup attempted with Stripe not configured", {
+							classId: cls.id,
+						});
+						return fail("Signups for this class aren't available right now.");
+					}
+
+					const params = new URLSearchParams();
+					params.set("mode", "payment");
+					params.set("success_url", `${classUrl}?checkout=success`);
+					params.set("cancel_url", `${classUrl}?checkout=cancelled`);
+					params.set("customer_email", email);
+					params.set("line_items[0][quantity]", "1");
+					params.set("line_items[0][price_data][currency]", "usd");
+					params.set("line_items[0][price_data][unit_amount]", String(cls.priceCents));
+					params.set("line_items[0][price_data][product_data][name]", cls.title);
+					params.set("metadata[classId]", cls.id);
+					params.set("metadata[name]", name);
+					params.set("metadata[email]", email);
+					if (notes) params.set("metadata[notes]", notes);
+
+					try {
+						const res = await ctx.http.fetch("https://api.stripe.com/v1/checkout/sessions", {
+							method: "POST",
+							headers: {
+								Authorization: `Bearer ${stripeSecretKey}`,
+								"Content-Type": "application/x-www-form-urlencoded",
+							},
+							body: params.toString(),
+						});
+
+						if (!res.ok) {
+							const body = await res.text().catch(() => "");
+							ctx.log.error("Stripe checkout session creation failed", {
+								status: res.status,
+								body,
+							});
+							return fail("Something went wrong starting checkout. Please try again.");
+						}
+
+						const session = (await res.json()) as { url?: string };
+						if (!session.url) {
+							return fail("Something went wrong starting checkout. Please try again.");
+						}
+
+						return { success: true, checkoutUrl: session.url };
+					} catch (err) {
+						ctx.log.error("Stripe checkout session request threw", { error: String(err) });
+						return fail("Something went wrong starting checkout. Please try again.");
+					}
 				}
 
 				const record: Signup = {
