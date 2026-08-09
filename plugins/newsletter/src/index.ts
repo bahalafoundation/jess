@@ -9,6 +9,6 @@ export function newsletterPlugin(): PluginDescriptor {
 		options: {},
 		capabilities: ["network:request"],
 		allowedHosts: ["api.buttondown.com"],
-	({ adminPages: [{ path: "/settings", label: "Newsletter Settings", icon: "mail" }],
+		adminPages: [{ path: "/settings", label: "Newsletter Settings", icon: "mail" }],
 	};
 }
