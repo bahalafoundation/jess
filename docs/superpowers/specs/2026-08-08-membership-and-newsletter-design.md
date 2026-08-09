@@ -80,22 +80,19 @@ The plugin's signup route branches on whether the target class has `price_cents`
 
 ### Stripe webhook handler
 
-A new plugin route, `webhooks/stripe`, receiving `checkout.session.completed` events (Stripe's standard webhook signature verification against a stored `webhookSecret`, both `apiKey` and `webhookSecret` added as `secret` settings fields alongside the plugin's existing settings). The route must be marked `public: true` — like the existing `signup`/`availability` routes — since Stripe's webhook requests carry no EmDash session or admin token.
+**Resolved architecture (supersedes the raw-body/CSRF open questions from the first review round):** EmDash's `SandboxedRequest` type only exposes `{ url, method, headers }` — no way to read a raw, unparsed body. Stripe's signature verification (`stripe.webhooks.constructEvent`) requires the exact raw body bytes, so it cannot happen inside a sandboxed plugin route at all, regardless of the CSRF question. The design splits webhook handling across two layers:
 
-**Open question for the implementation plan (higher-risk than the ones below):** Stripe's signature verification (`stripe.webhooks.constructEvent`) requires the exact raw, unparsed request body — EmDash's plugin route dispatcher appears to parse POST bodies into `routeCtx.input` via a Zod schema before the handler runs. Whether/how a sandboxed route can get at the raw body needs to be confirmed against the current plugin API before this is buildable as described; if there's no raw-body access, this may need to be a native (not sandboxed) plugin route instead.
+1. **`src/pages/api/webhooks/stripe.ts`** (new plain Astro server endpoint, outside the plugin sandbox entirely). Reads the raw body with `await context.request.text()`, verifies it against `STRIPE_WEBHOOK_SECRET`. Because this endpoint isn't inside the plugin's sandbox, it can't read the plugin's encrypted settings — so `STRIPE_WEBHOOK_SECRET` (and `STRIPE_SECRET_KEY`, for symmetry, though the plugin could alternatively hold its own copy as a plugin secret for creating Checkout Sessions) are plain deployment environment variables, following standard Stripe integration convention. This is a deliberate, narrow exception to "secrets live as encrypted plugin settings" — it's a boundary imposed by the sandbox, not an oversight.
+2. On a verified `checkout.session.completed` event, this endpoint forwards the already-verified metadata (`classId`, `name`, `email`, `notes`, the Stripe session ID) to a new plugin route, `webhooks/confirm`, via a same-origin `fetch` carrying the `X-EmDash-Request` header — the identical CSRF-satisfying pattern the frontend already uses to call `signup`/`availability`. `webhooks/confirm` does not re-verify Stripe's signature; it trusts that only this server-side endpoint calls it, the same trust boundary the browser-facing `signup` route already operates under.
 
-**Second open question:** this project's non-GET plugin routes normally require the `X-EmDash-Request` header or a matching `Origin` to pass CSRF checks (see CLAUDE.md's plugin quirks). Stripe's webhook requests will carry neither. Marking the route `public: true` addresses session/token auth, but the plan needs to confirm separately whether `public: true` (or some other flag) also exempts a route from the CSRF check — otherwise Stripe's deliveries will be rejected before the handler's own signature verification ever runs.
+`webhooks/confirm` (in the plugin, ordinary JSON input via `routeCtx.input`, no raw body needed):
 
-On receipt:
-
-1. Verify the Stripe signature. Reject (400) if invalid.
-2. Look up the checkout session's metadata (`classId`, `name`, `email`, `notes`).
-3. **Idempotency:** Stripe may redeliver webhooks. Before recording anything, check whether a signup already exists for this `(classId, email)` pair (existing dedupe-by-email logic already does this) or whether this specific Stripe session ID has already been processed (store the session ID against the signup record). If already processed, return success without side effects.
-4. Record the signup (same capacity/dedupe path as free classes, now confirmed-paid).
-5. Check whether an EmDash user already exists for this email.
+1. **Idempotency:** Stripe may redeliver webhooks. Before recording anything, check whether this specific Stripe session ID has already been processed (store it against the signup record) or whether a signup already exists for this `(classId, email)` pair (existing dedupe-by-email logic already does this). If already processed, return success without side effects.
+2. Record the signup (same capacity/dedupe path as free classes, now confirmed-paid).
+3. Check whether an EmDash user already exists for this email.
    - If not, call EmDash's user invite endpoint with `role: 10` (Subscriber). This triggers EmDash's own invite email (passkey registration, magic-link fallback) — no email-sending code of our own needed.
    - If a user already exists (they're already a member, or already have some other role), do nothing — an existing Editor/Admin who buys a class doesn't get demoted or re-invited.
-6. Log failures (e.g., invite call fails) rather than throwing, and surface them somewhere Jess can see (plugin admin page, same pattern as the existing signups list) so she can manually invite the payer from **Settings → Users** as a fallback — the payment and signup record are the source of truth either way.
+4. Log failures (e.g., invite call fails) rather than throwing, and surface them somewhere Jess can see (plugin admin page, same pattern as the existing signups list) so she can manually invite the payer from **Settings → Users** as a fallback — the payment and signup record are the source of truth either way.
 
 Signup records gain two new pieces of state beyond what's tracked today: the originating Stripe session ID (for idempotency) and, for the rare oversold case, a resolution status the admin page surfaces. These live in the plugin's existing (schemaless) storage alongside the current signup fields — no separate collection needed.
 
@@ -134,13 +131,14 @@ A public-facing login page (distinct from `/_emdash/admin/login`) that drives Em
 |---|---|
 | `classes` | add `price_cents` (integer, optional) |
 | `dispatches` (new) | `title`, `featured_image`, `summary`, `content`, `published_at` |
-| `class-signups` plugin | add Stripe Checkout branch, `webhooks/stripe` route (`public: true`), `apiKey`/`webhookSecret`/`emdashInviteToken` settings, session-id tracking for idempotency, `network:request` capability with the site's own domain in `allowedHosts` |
+| `class-signups` plugin | add `checkout/create` route (Checkout Session creation) and `webhooks/confirm` route (records signup + triggers invite, called only by our own webhook endpoint), `apiKey`/`emdashInviteToken` plugin secrets, session-id tracking for idempotency, `network:request` capability with Stripe's API host and the site's own domain in `allowedHosts` |
+| `src/pages/api/webhooks/stripe.ts` (new) | plain Astro endpoint; raw-body Stripe signature verification against `STRIPE_WEBHOOK_SECRET` (deployment env var, not a plugin secret — see Component 2) |
 | `newsletter` plugin (new) | `apiKey` setting, `subscribe` route |
 
 ## Security considerations
 
-- Stripe webhook signatures must be verified; unverified requests are rejected outright.
-- The Buttondown API key, Stripe API key/webhook secret, and the admin personal access token used to call EmDash's invite endpoint are all stored as encrypted plugin secrets, never in `.env` or committed config.
+- Stripe webhook signatures must be verified against the raw request body before anything else runs; unverified requests are rejected outright.
+- The Buttondown API key, the Stripe API key used to create Checkout Sessions, and the admin personal access token used to call EmDash's invite endpoint are stored as encrypted plugin secrets. `STRIPE_WEBHOOK_SECRET` is the one deliberate exception — it must be a deployment environment variable, since the endpoint that needs it runs outside the plugin sandbox and can't reach plugin-encrypted settings (see Component 2).
 - Gated `dispatches` content must never be present in server-rendered output for an unauthorized session — verify this explicitly (e.g. by checking the raw HTML response, not just what's visually hidden) during implementation.
 - The invite-triggering webhook handler must not be spoofable into inviting arbitrary emails as Subscribers — it only acts on verified Stripe events, and metadata (email) comes from the Checkout Session Stripe itself created, not from unauthenticated user input at webhook time.
 
