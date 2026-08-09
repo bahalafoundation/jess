@@ -18,6 +18,13 @@ interface ClassInfo {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+interface BlockInteraction {
+	type: "page_load" | "block_action" | "form_submit";
+	page?: string;
+	action_id?: string;
+	values?: Record<string, unknown>;
+}
+
 // 0.30 turns thrown Responses into opaque INTERNAL_ERRORs, so user-facing
 // failures are returned as { success: false, error } instead.
 function fail(error: string) {
@@ -51,6 +58,135 @@ async function countSignups(ctx: PluginContext, classId: string): Promise<number
 
 function signupId(classId: string, email: string): string {
 	return `${classId}:${email.trim().toLowerCase()}`;
+}
+
+async function renderSignupsDashboard(ctx: PluginContext) {
+	// Drain all signups (bounded — a portfolio site's class list stays small)
+	const all: Array<{ id: string; data: Signup }> = [];
+	let cursor: string | undefined;
+	do {
+		const result = await ctx.storage.signups.query({
+			orderBy: { createdAt: "desc" },
+			limit: 200,
+			cursor,
+		});
+		all.push(...(result.items as Array<{ id: string; data: Signup }>));
+		cursor = result.hasMore ? result.cursor : undefined;
+	} while (cursor && all.length < 2000);
+
+	const byClass = new Map<string, Array<Signup>>();
+	for (const item of all) {
+		const list = byClass.get(item.data.classId) ?? [];
+		list.push(item.data);
+		byClass.set(item.data.classId, list);
+	}
+
+	const blocks: any[] = [
+		{ type: "header", text: "Class Signups" },
+		{
+			type: "stats",
+			stats: [
+				{ label: "Total signups", value: String(all.length) },
+				{ label: "Classes with signups", value: String(byClass.size) },
+			],
+		},
+	];
+
+	if (all.length === 0) {
+		blocks.push({
+			type: "section",
+			text: "No signups yet. They'll appear here as soon as someone registers through the site.",
+		});
+		return { blocks };
+	}
+
+	// Sort class groups by soonest upcoming session first
+	const groups = await Promise.all(
+		[...byClass.entries()].map(async ([classId, signups]) => ({
+			classId,
+			signups,
+			cls: await getClass(ctx, classId),
+		})),
+	);
+	groups.sort((a, b) => {
+		const ta = a.cls?.startTime?.getTime() ?? 0;
+		const tb = b.cls?.startTime?.getTime() ?? 0;
+		return ta - tb;
+	});
+
+	for (const group of groups) {
+		const title = group.cls?.title ?? group.signups[0]?.className ?? "Unknown class";
+		const when = group.cls?.startTime
+			? group.cls.startTime.toLocaleString("en-US", {
+					dateStyle: "medium",
+					timeStyle: "short",
+				})
+			: "unscheduled";
+		blocks.push({ type: "divider" });
+		blocks.push({ type: "section", text: `${title} — ${when}` });
+		if (group.cls && group.cls.capacity !== Infinity) {
+			blocks.push({
+				type: "meter",
+				label: "Spots filled",
+				value: group.signups.length,
+				max: group.cls.capacity,
+				custom_value: `${group.signups.length} / ${group.cls.capacity}`,
+			});
+		}
+		blocks.push({
+			type: "table",
+			columns: [
+				{ key: "name", label: "Name" },
+				{ key: "email", label: "Email" },
+				{ key: "notes", label: "Notes" },
+				{ key: "createdAt", label: "Signed up" },
+			],
+			rows: group.signups.map((s) => ({
+				name: s.name,
+				email: s.email,
+				notes: s.notes ?? "",
+				createdAt: new Date(s.createdAt).toLocaleString("en-US", {
+					dateStyle: "medium",
+					timeStyle: "short",
+				}),
+			})),
+		});
+	}
+
+	return { blocks };
+}
+
+async function renderPaymentSettings(ctx: PluginContext) {
+	const stripeSecretKey = (await ctx.kv.get<string>("settings:stripeSecretKey")) ?? "";
+	const emdashInviteToken = (await ctx.kv.get<string>("settings:emdashInviteToken")) ?? "";
+	return {
+		blocks: [
+			{ type: "header", text: "Payment Settings" },
+			{
+				type: "section",
+				text: "The invite token is an EmDash personal access token with permission to invite users. Paste a Personal Access Token created from the admin panel (Settings → API Tokens, or wherever your EmDash version puts it).",
+			},
+			{
+				type: "form",
+				block_id: "settings",
+				fields: [
+					{
+						type: "secret_input",
+						action_id: "stripeSecretKey",
+						label: "Stripe Secret Key",
+						initial_value: stripeSecretKey,
+					},
+					{
+						type: "secret_input",
+						action_id: "emdashInviteToken",
+						label: "EmDash Invite Token",
+						initial_value: emdashInviteToken,
+					},
+				],
+				submit: { label: "Save", action_id: "save" },
+			},
+		],
+	};
 }
 
 export default {
@@ -131,102 +267,27 @@ export default {
 
 		admin: {
 			handler: async (routeCtx: any, ctx: PluginContext) => {
-				const interaction = (routeCtx.input ?? {}) as { type?: string; page?: string };
-				if (interaction.type !== "page_load") return { blocks: [] };
+				const interaction = (routeCtx.input ?? {}) as BlockInteraction;
 
-				// Drain all signups (bounded — a portfolio site's class list stays small)
-				const all: Array<{ id: string; data: Signup }> = [];
-				let cursor: string | undefined;
-				do {
-					const result = await ctx.storage.signups.query({
-						orderBy: { createdAt: "desc" },
-						limit: 200,
-						cursor,
-					});
-					all.push(...(result.items as Array<{ id: string; data: Signup }>));
-					cursor = result.hasMore ? result.cursor : undefined;
-				} while (cursor && all.length < 2000);
-
-				const byClass = new Map<string, Array<Signup>>();
-				for (const item of all) {
-					const list = byClass.get(item.data.classId) ?? [];
-					list.push(item.data);
-					byClass.set(item.data.classId, list);
+				if (interaction.type === "page_load") {
+					return interaction.page === "/settings"
+						? renderPaymentSettings(ctx)
+						: renderSignupsDashboard(ctx);
 				}
 
-				const blocks: any[] = [
-					{ type: "header", text: "Class Signups" },
-					{
-						type: "stats",
-						stats: [
-							{ label: "Total signups", value: String(all.length) },
-							{ label: "Classes with signups", value: String(byClass.size) },
-						],
-					},
-				];
-
-				if (all.length === 0) {
-					blocks.push({
-						type: "section",
-						text: "No signups yet. They'll appear here as soon as someone registers through the site.",
-					});
-					return { blocks };
-				}
-
-				// Sort class groups by soonest upcoming session first
-				const groups = await Promise.all(
-					[...byClass.entries()].map(async ([classId, signups]) => ({
-						classId,
-						signups,
-						cls: await getClass(ctx, classId),
-					})),
-				);
-				groups.sort((a, b) => {
-					const ta = a.cls?.startTime?.getTime() ?? 0;
-					const tb = b.cls?.startTime?.getTime() ?? 0;
-					return ta - tb;
-				});
-
-				for (const group of groups) {
-					const title = group.cls?.title ?? group.signups[0]?.className ?? "Unknown class";
-					const when = group.cls?.startTime
-						? group.cls.startTime.toLocaleString("en-US", {
-								dateStyle: "medium",
-								timeStyle: "short",
-							})
-						: "unscheduled";
-					blocks.push({ type: "divider" });
-					blocks.push({ type: "section", text: `${title} — ${when}` });
-					if (group.cls && group.cls.capacity !== Infinity) {
-						blocks.push({
-							type: "meter",
-							label: "Spots filled",
-							value: group.signups.length,
-							max: group.cls.capacity,
-							custom_value: `${group.signups.length} / ${group.cls.capacity}`,
-						});
+				if (interaction.type === "form_submit" && interaction.action_id === "save") {
+					for (const [key, value] of Object.entries(interaction.values ?? {})) {
+						if (typeof value === "string") {
+							await ctx.kv.set(`settings:${key}`, value);
+						}
 					}
-					blocks.push({
-						type: "table",
-						columns: [
-							{ key: "name", label: "Name" },
-							{ key: "email", label: "Email" },
-							{ key: "notes", label: "Notes" },
-							{ key: "createdAt", label: "Signed up" },
-						],
-						rows: group.signups.map((s) => ({
-							name: s.name,
-							email: s.email,
-							notes: s.notes ?? "",
-							createdAt: new Date(s.createdAt).toLocaleString("en-US", {
-								dateStyle: "medium",
-								timeStyle: "short",
-							}),
-						})),
-					});
+					return {
+						...(await renderPaymentSettings(ctx)),
+						toast: { message: "Settings saved", type: "success" },
+					};
 				}
 
-				return { blocks };
+				return { blocks: [] };
 			},
 		},
 	},
