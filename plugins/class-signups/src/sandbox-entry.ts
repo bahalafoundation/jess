@@ -7,6 +7,9 @@ interface Signup {
 	email: string;
 	notes?: string;
 	createdAt: string;
+	stripeSessionId?: string;
+	paid?: boolean;
+	oversold?: boolean;
 }
 
 interface ClassInfo {
@@ -30,6 +33,19 @@ interface BlockInteraction {
 // failures are returned as { success: false, error } instead.
 function fail(error: string) {
 	return { success: false as const, error };
+}
+
+// Constant-time string comparison for the shared-secret check below — matching
+// the same constant-time-comparison approach used for the Stripe HMAC check in
+// src/pages/api/webhooks/stripe.ts, for consistency rather than because the
+// threat model strictly demands it here.
+function timingSafeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	let mismatch = 0;
+	for (let i = 0; i < a.length; i++) {
+		mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	}
+	return mismatch === 0;
 }
 
 // Normalizes a content entry from ctx.content.get into the bits we need.
@@ -136,17 +152,25 @@ async function renderSignupsDashboard(ctx: PluginContext) {
 				custom_value: `${group.signups.length} / ${group.cls.capacity}`,
 			});
 		}
+		if (group.signups.some((s) => s.oversold)) {
+			blocks.push({
+				type: "section",
+				text: "⚠️ One or more paid signups for this class were recorded past capacity. Resolve manually (refund or accept the overage) — see the design spec's overselling note.",
+			});
+		}
 		blocks.push({
 			type: "table",
 			columns: [
 				{ key: "name", label: "Name" },
 				{ key: "email", label: "Email" },
+				{ key: "paid", label: "Paid" },
 				{ key: "notes", label: "Notes" },
 				{ key: "createdAt", label: "Signed up" },
 			],
 			rows: group.signups.map((s) => ({
 				name: s.name,
 				email: s.email,
+				paid: s.paid ? "Yes" : "—",
 				notes: s.notes ?? "",
 				createdAt: new Date(s.createdAt).toLocaleString("en-US", {
 					dateStyle: "medium",
@@ -328,6 +352,123 @@ export default {
 					full: unlimited ? false : taken >= cls.capacity,
 					closed,
 				};
+			},
+		},
+
+		"webhooks/confirm": {
+			public: true,
+			handler: async (routeCtx: any, ctx: PluginContext) => {
+				if (routeCtx.request.method !== "POST") {
+					return fail("Method not allowed.");
+				}
+
+				const sharedSecret = await ctx.kv.get<string>("settings:internalWebhookSecret");
+				const providedSecret = routeCtx.request.headers["x-internal-webhook-secret"] ?? "";
+				if (!sharedSecret || !timingSafeEqual(providedSecret, sharedSecret)) {
+					ctx.log.error("webhooks/confirm called with missing or wrong internal secret");
+					return fail("Unauthorized.");
+				}
+
+				const input = (routeCtx.input ?? {}) as Record<string, unknown>;
+				const stripeSessionId =
+					typeof input.stripeSessionId === "string" ? input.stripeSessionId.trim() : "";
+				const classId = typeof input.classId === "string" ? input.classId.trim() : "";
+				const name = typeof input.name === "string" ? input.name.trim() : "";
+				const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+				const notes = typeof input.notes === "string" ? input.notes.trim().slice(0, 1000) : "";
+
+				if (!stripeSessionId || !classId || !EMAIL_RE.test(email)) {
+					ctx.log.error("webhooks/confirm called with invalid payload", { classId, email });
+					return fail("Invalid payload.");
+				}
+
+				// Idempotency: Stripe may redeliver the same event, and can even deliver
+				// duplicates concurrently. Check-then-claim as early as possible — before
+				// recording the signup or touching membership — to keep the race window
+				// (two concurrent requests both passing the `exists()` check before
+				// either `put()`s the claim) as narrow as practical. `ctx.storage`
+				// doesn't document an atomic compare-and-swap primitive, so this can't
+				// be made fully race-proof; the residual risk is a duplicate invite call
+				// on the rare true-concurrent redelivery, which is harmless (EmDash's
+				// invite endpoint no-ops or errors harmlessly for an email that's
+				// already invited) — not the capacity-oversell race, which is a
+				// separate, already-acknowledged limitation.
+				if (await ctx.storage.processedStripeSessions.exists(stripeSessionId)) {
+					return { success: true, alreadyProcessed: true };
+				}
+				await ctx.storage.processedStripeSessions.put(stripeSessionId, {
+					classId,
+					email,
+					createdAt: new Date().toISOString(),
+				});
+
+				const cls = await getClass(ctx, classId);
+				if (!cls) {
+					ctx.log.error("webhooks/confirm: class not found", { classId });
+					return fail("Class not found.");
+				}
+
+				const id = signupId(cls.id, email);
+				const alreadySignedUp = await ctx.storage.signups.exists(id);
+
+				if (!alreadySignedUp) {
+					const taken = await countSignups(ctx, cls.id);
+					const oversold = taken >= cls.capacity;
+					if (oversold) {
+						ctx.log.error("Paid signup recorded past capacity — needs manual resolution", {
+							classId: cls.id,
+							email,
+						});
+					}
+
+					const record: Signup = {
+						classId: cls.id,
+						className: cls.title,
+						name,
+						email,
+						notes: notes || undefined,
+						createdAt: new Date().toISOString(),
+						stripeSessionId,
+						paid: true,
+						oversold: oversold || undefined,
+					};
+					await ctx.storage.signups.put(id, record);
+				}
+
+				// Grant membership if this email has no EmDash user yet.
+				if (ctx.users && ctx.http) {
+					try {
+						const existingUser = await ctx.users.getByEmail(email);
+						if (!existingUser) {
+							const inviteToken = await ctx.kv.get<string>("settings:emdashInviteToken");
+							if (!inviteToken) {
+								ctx.log.error("No invite token configured — cannot auto-invite paying member", {
+									email,
+								});
+							} else {
+								const inviteRes = await ctx.http.fetch(ctx.url("/_emdash/api/auth/invite"), {
+									method: "POST",
+									headers: {
+										Authorization: `Bearer ${inviteToken}`,
+										"Content-Type": "application/json",
+									},
+									body: JSON.stringify({ email, role: 10 }),
+								});
+								if (!inviteRes.ok) {
+									ctx.log.error("EmDash invite call failed", {
+										email,
+										status: inviteRes.status,
+										body: await inviteRes.text().catch(() => ""),
+									});
+								}
+							}
+						}
+				} catch (err) {
+					ctx.log.error("Membership invite check/call threw", { email, error: String(err) });
+				}
+				}
+
+				return { success: true };
 			},
 		},
 

@@ -13,6 +13,9 @@ export function classSignupsPlugin(options: { siteHost: string }): PluginDescrip
 			signups: {
 				indexes: ["classId", "createdAt"],
 			},
+			processedStripeSessions: {
+				indexes: ["createdAt"],
+			},
 		},
 		adminPages: [
 			{ path: "/signups", label: "Class Signups", icon: "list" },
