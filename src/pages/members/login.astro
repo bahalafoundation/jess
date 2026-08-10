@@ -1,0 +1,199 @@
+---
+export const prerender = false;
+
+import Base from "../../layouts/Base.astro";
+---
+
+<Base title="Member Login" description="Log in to read member-only content.">
+	<div class="login-page">
+		<h1 class="login-title">Member Login</h1>
+
+		<button type="button" data-passkey-login class="login-button">
+			Log in with a passkey
+		</button>
+		<p class="login-error" data-passkey-error hidden></p>
+
+		<div class="login-divider"><span>or</span></div>
+
+		<form data-magic-link-form>
+			<div class="form-field">
+				<label for="magic-link-email">Email</label>
+				<input
+					type="email"
+					id="magic-link-email"
+					name="email"
+					required
+					placeholder="you@example.com"
+					autocomplete="email"
+				/>
+			</div>
+			<button type="submit" class="login-button" data-magic-link-submit>
+				Email me a login link
+			</button>
+			<p class="login-message" data-magic-link-message hidden></p>
+		</form>
+	</div>
+</Base>
+
+<script>
+	import { startAuthentication } from "@simplewebauthn/browser";
+
+	const passkeyButton = document.querySelector<HTMLButtonElement>("[data-passkey-login]");
+	const passkeyError = document.querySelector<HTMLElement>("[data-passkey-error]")!;
+
+	passkeyButton?.addEventListener("click", async () => {
+		passkeyError.hidden = true;
+		try {
+			const optionsRes = await fetch("/_emdash/api/auth/passkey/options", {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-EmDash-Request": "1" },
+				body: JSON.stringify({}),
+			});
+			// EmDash wraps options in a `{ success, options }` envelope, not `data`.
+			const optionsPayload = await optionsRes.json();
+			const options = optionsPayload?.options;
+			if (!optionsRes.ok || !options) {
+				throw new Error("Could not start passkey login.");
+			}
+
+			const credential = await startAuthentication({ optionsJSON: options });
+
+			// EmDash's verify endpoint expects the credential wrapped in `{ credential }`.
+			const verifyRes = await fetch("/_emdash/api/auth/passkey/verify", {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-EmDash-Request": "1" },
+				body: JSON.stringify({ credential }),
+			});
+			const result = await verifyRes.json();
+
+			if (verifyRes.ok && result?.success !== false) {
+				window.location.href = "/dispatches";
+			} else {
+				throw new Error(result?.error ?? "Passkey login failed.");
+			}
+		} catch (err) {
+			passkeyError.textContent =
+				err instanceof Error ? err.message : "Passkey login failed. Try the email link instead.";
+			passkeyError.hidden = false;
+		}
+	});
+
+	const magicLinkForm = document.querySelector<HTMLFormElement>("[data-magic-link-form]");
+	const magicLinkMessage = document.querySelector<HTMLElement>("[data-magic-link-message]")!;
+
+	magicLinkForm?.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		const submitButton = magicLinkForm.querySelector<HTMLButtonElement>("[data-magic-link-submit]")!;
+		const email = new FormData(magicLinkForm).get("email");
+
+		submitButton.disabled = true;
+		try {
+			const res = await fetch("/_emdash/api/auth/magic-link/send", {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "X-EmDash-Request": "1" },
+				body: JSON.stringify({ email }),
+			});
+			const data = await res.json();
+			magicLinkMessage.textContent =
+				res.ok && data?.success !== false
+					? "Check your email for a login link."
+					: (data?.error ?? "Something went wrong. Please try again.");
+			magicLinkMessage.hidden = false;
+		} catch {
+			magicLinkMessage.textContent = "Something went wrong. Please try again.";
+			magicLinkMessage.hidden = false;
+		} finally {
+			submitButton.disabled = false;
+		}
+	});
+</script>
+
+<style>
+	.login-page {
+		max-width: 400px;
+		margin: 0 auto;
+		padding: var(--spacing-3xl) var(--spacing-lg);
+	}
+
+	.login-title {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-3xl);
+		font-weight: var(--font-weight-display);
+		margin-bottom: var(--spacing-2xl);
+		text-align: center;
+	}
+
+	.login-button {
+		width: 100%;
+		padding: var(--spacing-md) var(--spacing-xl);
+		font-family: inherit;
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+		color: var(--color-bg);
+		background: var(--color-text);
+		border: none;
+		border-radius: var(--radius);
+		cursor: pointer;
+	}
+
+	.login-button:hover:not(:disabled) {
+		background: var(--color-brand);
+		color: var(--color-on-brand);
+	}
+
+	.login-button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.login-divider {
+		display: flex;
+		align-items: center;
+		gap: var(--spacing-md);
+		margin: var(--spacing-xl) 0;
+		color: var(--color-muted);
+		font-size: var(--font-size-sm);
+	}
+
+	.login-divider::before,
+	.login-divider::after {
+		content: "";
+		flex: 1;
+		height: 1px;
+		background: var(--color-border);
+	}
+
+	.form-field {
+		display: flex;
+		flex-direction: column;
+		gap: var(--spacing-sm);
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.form-field label {
+		font-size: var(--font-size-sm);
+		font-weight: 500;
+	}
+
+	.form-field input {
+		padding: var(--spacing-md);
+		font-family: inherit;
+		font-size: var(--font-size-base);
+		color: var(--color-text);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+	}
+
+	.login-error {
+		margin-top: var(--spacing-sm);
+		color: var(--color-danger);
+		font-size: var(--font-size-sm);
+	}
+
+	.login-message {
+		margin-top: var(--spacing-sm);
+		color: var(--color-muted);
+		font-size: var(--font-size-sm);
+	}
+</style>

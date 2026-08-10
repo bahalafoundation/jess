@@ -18,6 +18,7 @@
     "@astrojs/react": "^6.0.0",
     "@emdash-cms/cloudflare": "^0.30.0",
     "@jess/plugin-class-signups": "workspace:*",
+    "@simplewebauthn/browser": "^13.3.0",
     "astro": "^7.0.0",
     "emdash": "^0.30.0",
     "react": "19.2.4",
