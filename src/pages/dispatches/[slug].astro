@@ -1,0 +1,161 @@
+---
+export const prerender = false;
+
+import { getEmDashEntry, decodeSlug } from "emdash";
+import { Image, PortableText } from "emdash/ui";
+import Base from "../../layouts/Base.astro";
+import { getCurrentUser, isMember } from "../../lib/session";
+
+const slug = decodeSlug(Astro.params.slug);
+
+if (!slug) {
+	return Astro.redirect("/404");
+}
+
+const { entry: dispatch, cacheHint } = await getEmDashEntry("dispatches", slug);
+
+if (!dispatch) {
+	return Astro.redirect("/404");
+}
+
+if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
+
+// Session read via EmDash's wired auth middleware locals.user (see lib/session).
+const user = getCurrentUser(Astro.locals);
+const member = isMember(user);
+
+function getImageSrc(img: unknown): string | undefined {
+	if (!img || typeof img !== "object") return undefined;
+	const image = img as Record<string, unknown>;
+	return typeof image.src === "string" ? image.src : undefined;
+}
+---
+
+<Base
+	title={dispatch.data.title}
+	description={dispatch.data.summary}
+	image={getImageSrc(dispatch.data.featured_image)}
+>
+	<article class="dispatch-page">
+		<h1 class="dispatch-title">{dispatch.data.title}</h1>
+
+		{dispatch.data.featured_image && (
+			<div class="featured-image">
+				<Image image={dispatch.data.featured_image} />
+			</div>
+		)}
+
+		{dispatch.data.summary && (
+			<p class="dispatch-summary">{dispatch.data.summary}</p>
+		)}
+
+		{
+			member ? (
+				dispatch.data.content && (
+					<div class="dispatch-content">
+						<PortableText value={dispatch.data.content} />
+					</div>
+				)
+			) : (
+				<div class="member-gate">
+					<h2>This dispatch is for members</h2>
+					<p>
+						Full dispatches unlock the moment you pay for any class.{" "}
+						<a href="/classes">See upcoming classes</a>, or if you're already a
+						member, <a href="/members/login">log in</a>.
+					</p>
+				</div>
+			)
+		}
+	</article>
+</Base>
+
+<style>
+	.dispatch-page {
+		max-width: var(--max-width);
+		margin: 0 auto;
+		padding: var(--spacing-2xl) var(--spacing-lg) var(--spacing-4xl);
+	}
+
+	.dispatch-title {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-4xl);
+		font-weight: var(--font-weight-display);
+		line-height: var(--leading-tight);
+		margin-bottom: var(--spacing-lg);
+	}
+
+	.featured-image {
+		margin-bottom: var(--spacing-2xl);
+	}
+
+	.featured-image img {
+		width: 100%;
+		height: auto;
+		border-radius: var(--radius);
+	}
+
+	.dispatch-summary {
+		font-size: var(--font-size-lg);
+		color: var(--color-muted);
+		line-height: var(--leading-normal);
+		margin-bottom: var(--spacing-2xl);
+	}
+
+	.dispatch-content {
+		font-size: var(--font-size-base);
+		line-height: var(--leading-relaxed);
+	}
+
+	.dispatch-content :global(p) {
+		margin-bottom: 1.5em;
+	}
+
+	.dispatch-content :global(h2) {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-2xl);
+		font-weight: var(--font-weight-heading);
+		margin-top: 2.5em;
+		margin-bottom: 0.75em;
+	}
+
+	.dispatch-content :global(h3) {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-xl);
+		font-weight: var(--font-weight-heading);
+		margin-top: 2em;
+		margin-bottom: 0.5em;
+	}
+
+	.dispatch-content :global(blockquote) {
+		margin: 2em 0;
+		padding-left: var(--spacing-xl);
+		border-left: 2px solid var(--color-brand);
+		color: var(--color-muted);
+		font-family: var(--font-heading);
+		font-style: italic;
+		font-size: var(--font-size-lg);
+	}
+
+	.member-gate {
+		padding: var(--spacing-2xl);
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+	}
+
+	.member-gate h2 {
+		font-family: var(--font-heading);
+		font-size: var(--font-size-xl);
+		font-weight: var(--font-weight-heading);
+		margin-bottom: var(--spacing-sm);
+	}
+
+	.member-gate p {
+		color: var(--color-muted);
+	}
+
+	.member-gate a {
+		color: var(--color-text);
+	}
+</style>
