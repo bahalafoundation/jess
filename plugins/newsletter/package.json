@@ -1,0 +1,16 @@
+{
+	"name": "@jess/plugin-newsletter",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./sandbox": "./src/sandbox-entry.ts"
+	},
+	"peerDependencies": {
+		"emdash": "*"
+	},
+	"devDependencies": {
+		"emdash": "^0.30.0"
+	}
+}
