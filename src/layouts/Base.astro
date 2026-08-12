@@ -51,18 +51,6 @@ const pageCtx = createPublicPageContext({
 			title={`${siteTitle} RSS Feed`}
 			href="/rss.xml"
 		/>
-		<script is:inline>
-			// Apply an explicit theme choice immediately to prevent flash.
-			// With no cookie, color-scheme: light dark follows the OS.
-			(function () {
-				var c = document.cookie;
-				var i = c.indexOf("theme=");
-				var theme = i >= 0 ? c.slice(i + 6).split(";")[0] : null;
-				if (theme === "dark" || theme === "light") {
-					document.documentElement.classList.add(theme);
-				}
-			})();
-		</script>
 	</head>
 	<body>
 		<header class="site-header">
@@ -104,74 +92,12 @@ const pageCtx = createPublicPageContext({
 					</p>
 				</div>
 				<div class="footer-right">
-					<div class="theme-switcher">
-						<button
-							type="button"
-							class="theme-btn"
-							data-theme="light"
-							aria-label="Light mode">Light</button
-						>
-						<button
-							type="button"
-							class="theme-btn"
-							data-theme="dark"
-							aria-label="Dark mode">Dark</button
-						>
-						<button
-							type="button"
-							class="theme-btn"
-							data-theme="system"
-							aria-label="System theme">System</button
-						>
-					</div>
 					<p class="footer-powered">
 						Powered by <a href="https://emdashcms.com">EmDash</a>
 					</p>
 				</div>
 			</div>
 		</footer>
-
-		<script>
-			// Theme switcher
-			const THEME_REGEX = /theme=([^;]+)/;
-			const themeBtns =
-				document.querySelectorAll<HTMLButtonElement>(".theme-btn");
-			const root = document.documentElement;
-
-			function setTheme(theme: string) {
-				const secure = location.protocol === "https:" ? "; Secure" : "";
-				if (theme === "system") {
-					document.cookie = `theme=; path=/; max-age=0; SameSite=Lax${secure}`;
-					root.classList.remove("light", "dark");
-				} else {
-					document.cookie = `theme=${theme}; path=/; max-age=31536000; SameSite=Lax${secure}`;
-					root.classList.remove("light", "dark");
-					root.classList.add(theme);
-				}
-				updateActiveBtn(theme);
-			}
-
-			function updateActiveBtn(theme: string) {
-				themeBtns.forEach((btn) => {
-					btn.classList.toggle("active", btn.dataset.theme === theme);
-				});
-			}
-
-			function getStoredTheme(): string {
-				const match = document.cookie.match(THEME_REGEX);
-				return match ? match[1] : "system";
-			}
-
-			// Initialize - apply stored theme on load
-			const storedTheme = getStoredTheme();
-			setTheme(storedTheme);
-
-			themeBtns.forEach((btn) => {
-				btn.addEventListener("click", () => {
-					setTheme(btn.dataset.theme || "system");
-				});
-			});
-		</script>
 
 		<style is:global>
 			/*
@@ -188,24 +114,6 @@ const pageCtx = createPublicPageContext({
 					box-sizing: border-box;
 					margin: 0;
 					padding: 0;
-				}
-
-				/*
-				 * Design tokens live in src/styles/tokens.css. Colors are
-				 * defined with light-dark(); these rules pin the scheme when
-				 * the footer switcher sets an explicit choice. With no class,
-				 * color-scheme: light dark follows the OS preference. The
-				 * @supports guard keeps the toggle from forcing dark UA form
-				 * controls on browsers stuck on the plain-light fallback.
-				 */
-				@supports (color: light-dark(#000, #fff)) {
-					:root.light {
-						color-scheme: light;
-					}
-
-					:root.dark {
-						color-scheme: dark;
-					}
 				}
 
 				html {
@@ -348,34 +256,6 @@ const pageCtx = createPublicPageContext({
 				flex-direction: column;
 				align-items: flex-end;
 				gap: var(--spacing-md);
-			}
-
-			.theme-switcher {
-				display: flex;
-				gap: var(--spacing-xs);
-			}
-
-			.theme-btn {
-				background: transparent;
-				border: 1px solid var(--color-border);
-				color: var(--color-muted);
-				font-family: var(--font-body);
-				font-size: var(--font-size-sm);
-				padding: var(--spacing-xs) var(--spacing-sm);
-				border-radius: var(--radius);
-				cursor: pointer;
-				transition: all var(--transition-fast);
-			}
-
-			.theme-btn:hover {
-				color: var(--color-text);
-				border-color: var(--color-text);
-			}
-
-			.theme-btn.active {
-				background: var(--color-surface);
-				color: var(--color-text);
-				border-color: var(--color-brand);
 			}
 
 			.footer-powered {

@@ -25,4 +25,18 @@
 */
 
 :root {
+	/*
+	  Light only. Pinning color-scheme resolves every light-dark() token in
+	  tokens.css to its light value and keeps UA form controls light, so the
+	  dark half of the palette is unreachable and the plain colors below are
+	  the whole story.
+	*/
+	color-scheme: light;
+
+	/* Warm cream, a shade off the paper white the default palette used. */
+	--color-bg: #faf5ec;
+	--color-surface: #fffdf8;
+	--color-border: #e7ded0;
+	--color-text: #1f1b16;
+	--color-muted: #6f665c;
 }
