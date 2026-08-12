@@ -1,6 +1,7 @@
 import cloudflare from "@astrojs/cloudflare";
 import react from "@astrojs/react";
 import { d1, r2 } from "@emdash-cms/cloudflare";
+import { cloudflareEmail } from "@emdash-cms/cloudflare/plugins";
 import { classSignupsPlugin } from "@jess/plugin-class-signups";
 import { newsletterPlugin } from "@jess/plugin-newsletter";
 import { defineConfig, fontProviders } from "astro/config";
@@ -24,7 +25,13 @@ export default defineConfig({
 		emdash({
 			database: d1({ binding: "DB", session: "auto" }),
 			storage: r2({ binding: "MEDIA" }),
-			plugins: [classSignupsPlugin({ siteHost }), newsletterPlugin()],
+			plugins: [
+				classSignupsPlugin({ siteHost }),
+				newsletterPlugin(),
+				// Without an email:deliver provider the only handler on Workers is a
+				// dev console stub, so magic-link login and invites fail in production.
+				cloudflareEmail({ from: { email: "noreply@jesscole.net", name: "Jess Cole" } }),
+			],
 		}),
 	],
 	fonts: [

@@ -16,6 +16,12 @@
 			"bucket_name": "jess","preview_bucket_name": "jess",
 		},
 	],
+	// Cloudflare Email Sending -- `from` must be @jesscole.net
+	"send_email": [
+		{
+			"name": "EMAIL",
+		},
+	],
 	// Worker Loader for plugin sandboxing
 	"worker_loaders": [
 		{
