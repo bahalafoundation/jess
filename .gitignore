@@ -10,6 +10,8 @@ node_modules/
 # local data
 data.db
 data.db-journal
+data.db-shm
+data.db-wal
 uploads/
 
 # logs
@@ -27,3 +29,6 @@ npm-debug.log*
 .DS_Store
 
 .wrangler
+
+# Local database dumps and backups from scripts/sync-db-from-prod.sh
+.db-backups
